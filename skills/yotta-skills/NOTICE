@@ -1,0 +1,13 @@
+# NOTICE — YottaMeta 品牌声明
+
+「YottaMeta」「元阁」「yotta-skills」以及本家族各技能名称（yotta-* 前缀）是 YottaMeta 的品牌与标识。
+
+本软件以 MIT 许可证开源，任何人均可自由使用、修改与分发。若你在其基础上制作派生作品：
+
+1. 不得继续使用 YottaMeta 或本家族名称（yotta-*、元阁 等）作为派生作品的名称；
+2. 不得暗示派生作品由 YottaMeta 官方维护、认可或与之存在关联；
+3. 建议在派生作品中明确声明「与 YottaMeta 官方无关联」。
+
+上游来源致谢：本技能由 YottaMeta 全新实现（零依赖自研 + 中文教学）。全家一键安装的方向参考
+社区 bundle / installer 类技能与 npm 生态思路，无上游代码；本包不包含任何技能本体，技能内容
+均来自各 yotta-* 技能自身的 npm 包。

@@ -1,0 +1,32 @@
+{
+  "name": "@yottameta/yotta-skills-plugin",
+  "version": "0.5.0",
+  "description": "YuanGe (元阁) — orchestration and routing for the YottaMeta skill family, packaged as a YottaMeta Agent Plugin.",
+  "license": "MIT",
+  "keywords": [
+    "yottameta",
+    "agent-plugins",
+    "agent-skills",
+    "mcp",
+    "yotta-skills"
+  ],
+  "homepage": "https://github.com/YottaMeta/yotta-skills-plugin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YottaMeta/yotta-skills-plugin.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "plugin.json",
+    "mcp.json",
+    "skills",
+    ".agents",
+    ".claude-plugin",
+    "README.md",
+    "LICENSE",
+    "!**/__pycache__/**",
+    "!**/*.pyc"
+  ]
+}

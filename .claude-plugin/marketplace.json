@@ -1,0 +1,25 @@
+{
+  "name": "yotta-skills",
+  "interface": {
+    "displayName": "元阁 yotta-skills (YottaMeta)"
+  },
+  "plugins": [
+    {
+      "name": "yotta-skills",
+      "source": ".",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools",
+      "version": "0.5.0",
+      "description": "YuanGe (元阁) - orchestration routing, inventory, and one-command installer for the YottaMeta skill family (zero dependencies, Node.js only).",
+      "interface": {
+        "displayName": "元阁 yotta-skills",
+        "shortDescription": "YuanGe (元阁) - orchestration routing, inventory, and one-command installer for the YottaMeta skill family (zero dependenc",
+        "developerName": "YottaMeta",
+        "category": "Developer Tools"
+      }
+    }
+  ]
+}
