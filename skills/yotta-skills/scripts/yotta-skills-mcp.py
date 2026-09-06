@@ -24,10 +24,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 TOOL_NAME = "yotta-skills"
 CN_NAME = "元阁"
-MCP_PROTOCOL = "2025-03-26"
+MCP_PROTOCOL_MODERN = "2026-07-28"
+MCP_PROTOCOL_LEGACY = "2025-11-25"
+SERVER_INFO = {"name": TOOL_NAME, "version": VERSION}
 SERVERS = {TOOL_NAME: {"name": TOOL_NAME, "cn": CN_NAME, "version": VERSION}}
 
 _HERE = Path(__file__).resolve().parent
@@ -193,8 +195,41 @@ def mcp_tools():
     ]
 
 
+def _req_version(params):
+    """取请求声明的最新协议版本（modern _meta 字段）；无 = legacy。"""
+    meta = (params or {}).get("_meta") or {}
+    return meta.get("io.modelcontextprotocol/protocolVersion")
+
+
+def _modern_ok(payload, cache=None):
+    """modern 结果包装：resultType + _meta.serverInfo（list/discover 加 ttlMs/cacheScope）。"""
+    out = {"resultType": "complete"}
+    out.update(payload)
+    out["_meta"] = {"io.modelcontextprotocol/serverInfo": dict(SERVER_INFO)}
+    if cache:
+        out["ttlMs"] = cache[0]
+        out["cacheScope"] = cache[1]
+    return out
+
+
+def _unsupported_version(rid, pv):
+    return {
+        "jsonrpc": "2.0", "id": rid,
+        "error": {
+            "code": -32022,
+            "message": "Unsupported protocol version",
+            "data": {"supported": [MCP_PROTOCOL_MODERN], "requested": pv},
+        },
+    }
+
+
 def handle_message(msg):
-    """处理一行 JSON-RPC 消息，返回响应 dict；通知返回 None。"""
+    """处理一行 JSON-RPC 消息，返回响应 dict；通知返回 None。
+
+    双时代（dual-era）：请求 _meta 带 io.modelcontextprotocol/protocolVersion =
+    modern（2026-07-28 无状态，server/discover 取代握手）；无该字段 = legacy
+    （2025-11-25 及更早，initialize 握手），响应保持旧形状。
+    """
     if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0":
         rid = msg.get("id") if isinstance(msg, dict) else None
         return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32600, "message": "invalid request"}}
@@ -205,14 +240,60 @@ def handle_message(msg):
     if method is None:
         return None
     params = msg.get("params") or {}
+    pv = _req_version(params)
 
+    if pv is not None:
+        # ---- modern（2026-07-28 无状态）----
+        if pv != MCP_PROTOCOL_MODERN:
+            return _unsupported_version(rid, pv)
+        if method == "server/discover":
+            return {
+                "jsonrpc": "2.0", "id": rid,
+                "result": _modern_ok({
+                    "supportedVersions": [MCP_PROTOCOL_MODERN],
+                    "capabilities": {"tools": {}},
+                    "instructions": "元阁 MCP（基于 MCP 最新协议 2026-07-28，向后兼容 2025-11-25 及更早握手）：本机技能盘点与静态编排路由 list_installed_skills/describe_skill/reindex/route_request；数据不出本机。",
+                }, (3600000, "public")),
+            }
+        if method == "tools/list":
+            return {
+                "jsonrpc": "2.0", "id": rid,
+                "result": _modern_ok({"tools": mcp_tools()}, (300000, "public")),
+            }
+        if method == "tools/call":
+            name = params.get("name")
+            arguments = params.get("arguments") or {}
+            handler = TOOL_HANDLERS.get(name)
+            if not handler:
+                return {
+                    "jsonrpc": "2.0", "id": rid,
+                    "result": _modern_ok({"content": [{"type": "text", "text": "未知工具: %s" % name}], "isError": True}),
+                }
+            try:
+                return {"jsonrpc": "2.0", "id": rid, "result": _modern_ok(handler(arguments))}
+            except Exception as e:  # noqa: BLE001
+                return {
+                    "jsonrpc": "2.0", "id": rid,
+                    "result": _modern_ok({"content": [{"type": "text", "text": "工具执行异常：%s" % e}], "isError": True}),
+                }
+        if method == "initialize":
+            return {
+                "jsonrpc": "2.0", "id": rid,
+                "error": {
+                    "code": -32601,
+                    "message": "initialize removed in MCP 2026-07-28; use server/discover. supported: ['2026-07-28']",
+                },
+            }
+        return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found: " + str(method)}}
+
+    # ---- legacy（<=2025-11-25，initialize 握手；响应保持旧形状）----
     if method == "initialize":
         return {
             "jsonrpc": "2.0", "id": rid,
             "result": {
-                "protocolVersion": MCP_PROTOCOL,
+                "protocolVersion": MCP_PROTOCOL_LEGACY,
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": TOOL_NAME, "version": VERSION},
+                "serverInfo": SERVER_INFO,
             },
         }
     if method == "ping":
@@ -229,14 +310,16 @@ def handle_message(msg):
                 "result": {"content": [{"type": "text", "text": "未知工具: %s" % name}], "isError": True},
             }
         try:
-            return {"jsonrpc": "2.0", "id": rid, "result": handler(arguments)}
+            return {
+                "jsonrpc": "2.0", "id": rid,
+                "result": handler(arguments),
+            }
         except Exception as e:  # noqa: BLE001
             return {
                 "jsonrpc": "2.0", "id": rid,
                 "result": {"content": [{"type": "text", "text": "工具执行异常：%s" % e}], "isError": True},
             }
     return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found: " + str(method)}}
-
 
 def main():
     """stdio 主循环：读行 -> JSON-RPC -> 响应行。"""

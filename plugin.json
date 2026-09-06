@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "yotta-skills",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "YuanGe (元阁) - orchestration routing, inventory, and one-command installer for the YottaMeta skill family (zero dependencies, Node.js only).",
   "author": {
     "name": "YottaMeta",
