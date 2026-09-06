@@ -12,7 +12,7 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Developer Tools",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "description": "YuanGe (元阁) - orchestration routing, inventory, and one-command installer for the YottaMeta skill family (zero dependencies, Node.js only).",
       "interface": {
         "displayName": "元阁 yotta-skills",

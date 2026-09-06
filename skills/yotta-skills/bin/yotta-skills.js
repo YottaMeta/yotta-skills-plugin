@@ -8,6 +8,8 @@
  *   npx -y @yottameta/yotta-skills install --dir <path>   # 装全家到指定目录
  *   npx -y @yottameta/yotta-skills install <skill> --dir <path>  # 装单个技能
  *   npx -y @yottameta/yotta-skills update --agent <name>  # 增量更新已装技能（补齐缺失/版本不一致）
+ *   npx -y @yottameta/yotta-skills update --check         # 只读检查更新（联网对 npm 最新，不改动；退出码 0/3/1）
+ *   npx -y @yottameta/yotta-skills update --auto          # 检查到家族更新后自动更新（仅 yotta-* 家族，含装前扫描）
  *   npx -y @yottameta/yotta-skills --dry-run              # 预览将安装清单（不联网、不改动）
  *
  * 版本策略：清单锁定 `major.x`（不锁死 patch，维护性更新随最新）；--pin 锁死精确版本。
@@ -20,6 +22,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const http = require('http');
+const https = require('https');
 
 const PKG_ROOT = path.join(__dirname, '..');
 let VERSION = '0.2.1';
@@ -132,6 +136,7 @@ function parseArgs(argv) {
     help: false, version: false, agent: null, dir: null, npm: null,
     python: null, verify: null, command: null, skill: null, rest: [],
     inventory: false, reindex: false, noReindex: false, json: false, project: false, route: null,
+    check: false, auto: false, registry: null,
   };
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
@@ -160,6 +165,9 @@ function parseArgs(argv) {
     else if (a === '--npm') opts.npm = take('--npm');
     else if (a === '--python') opts.python = take('--python');
     else if (a === '--verify') opts.verify = take('--verify');
+    else if (a === '--check') opts.check = true;
+    else if (a === '--auto') opts.auto = true;
+    else if (a === '--registry') opts.registry = take('--registry');
     else if (a.startsWith('-')) die('未知参数: ' + a);
     else positionals.push(a);
   }
@@ -206,6 +214,147 @@ function readInstalledVersion(dir) {
     const m = text.match(/^version:\s*([0-9]+\.[0-9]+\.[0-9]+)/m);
     return m ? m[1] : null;
   } catch (_) { return null; }
+}
+
+
+// ── 更新检查（只读）与自动更新 ─────────────────────────────────────────────
+function registryUrl(pkg, registry) {
+  var base = (registry || process.env.YOTTA_SKILLS_REGISTRY || 'https://registry.npmjs.org/').replace(/\/$/, '');
+  return base + '/' + pkg.replace(/\//g, '%2f');
+}
+
+function fetchRegistryLatest(pkg, opts) {
+  return new Promise(function (resolve) {
+    var url = registryUrl(pkg, opts.registry);
+    var client = url.startsWith('https:') ? https : http;
+    var req = client.get(url, { timeout: 15000, headers: { 'accept': 'application/json', 'user-agent': 'yotta-skills-check' } }, function (res) {
+      var data = '';
+      res.setEncoding('utf8');
+      res.on('data', function (c) { data += c; });
+      res.on('end', function () {
+        try {
+          var j = JSON.parse(data);
+          var latest = j && j['dist-tags'] && j['dist-tags'].latest;
+          if (!latest) { resolve({ ok: false, error: '响应缺少 dist-tags.latest（' + pkg + '）' }); return; }
+          resolve({ ok: true, version: latest });
+        } catch (e) {
+          resolve({ ok: false, error: '解析 registry 响应失败: ' + e.message });
+        }
+      });
+    });
+    req.on('error', function (e) { resolve({ ok: false, error: '网络错误: ' + (e && e.message ? e.message : e) }); });
+    req.on('timeout', function () { req.destroy(); resolve({ ok: false, error: '网络超时（15s）' }); });
+  });
+}
+
+function readInstalledMeta(dir) {
+  var f = path.join(dir, 'SKILL.md');
+  try {
+    var text = fs.readFileSync(f, 'utf8');
+    var name = (text.match(/^name:\s*(.+)$/m) || [])[1];
+    var version = (text.match(/^version:\s*([0-9]+\.[0-9]+\.[0-9]+)/m) || [])[1];
+    return { name: name ? name.trim() : null, version: version || null };
+  } catch (e) { return { name: null, version: null }; }
+}
+
+function familySkillFor(slug) {
+  var m = findSkill(slug);
+  if (m) return m;
+  if (/^yotta-/.test(slug)) {
+    return { slug: slug, name: slug.replace(/^yotta-/, ''), pkg: '@yottameta/' + slug, version: null, desc: '推断的家族技能（不在 skills.json 清单）' };
+  }
+  return null;
+}
+
+function scanInstalledSlugs(dest) {
+  var list = [];
+  var entries;
+  try { entries = fs.readdirSync(dest, { withFileTypes: true }); } catch (e) { return list; }
+  for (var i = 0; i < entries.length; i++) {
+    var e = entries[i];
+    if (!e.isDirectory()) continue;
+    var meta = readInstalledMeta(path.join(dest, e.name));
+    if (meta.name) list.push({ slug: e.name, name: meta.name, version: meta.version });
+  }
+  return list;
+}
+
+async function runUpdateCheck(opts, dest) {
+  var lines = [];
+  var quiet = !!opts.json;
+  function say(s) { if (!quiet) lines.push(s); }
+  say('yotta-skills（元阁）v' + VERSION + ' —— 检查更新（只读，不改动） -> ' + dest);
+  say('版本源: ' + (opts.registry || process.env.YOTTA_SKILLS_REGISTRY || 'https://registry.npmjs.org/'));
+  say('');
+  var installed = scanInstalledSlugs(dest);
+  if (installed.length === 0) {
+    say('（' + dest + ' 下未发现已装技能目录）');
+    return { code: 0, rows: [], updates: 0, latest: 0, failed: 0, nonFamily: 0 };
+  }
+  var rows = [];
+  var updates = 0, latest = 0, failed = 0, nonFamily = 0;
+  for (var i = 0; i < installed.length; i++) {
+    var it = installed[i];
+    var fam = familySkillFor(it.slug);
+    if (!fam) {
+      nonFamily++;
+      say('  - ' + it.slug.padEnd(22) + '非元阁家族，跳过');
+      continue;
+    }
+    var res = await fetchRegistryLatest(fam.pkg, opts);
+    if (!res.ok) {
+      failed++;
+      say('  ✘ ' + it.slug.padEnd(22) + '检查失败: ' + res.error);
+      continue;
+    }
+    var current = res.version;
+    var cur = it.version || null;
+    var isUp = (cur === current);
+    if (isUp) {
+      latest++;
+      say('  ✔ ' + it.slug.padEnd(22) + '已最新（本地 v' + cur + '）');
+    } else {
+      updates++;
+      say('  ➤ ' + it.slug.padEnd(22) + '有更新：本地 v' + (cur || '未知') + ' -> 最新 v' + current);
+      if (fam.version && fam.version !== current) {
+        say('       ⚠ 清单 skills.json 记为 v' + fam.version + '，与 npm 最新 v' + current + ' 不一致（需同步清单）');
+      }
+    }
+    rows.push({ slug: it.slug, installed: cur, latest: current, pkg: fam.pkg, hasUpdate: !isUp, family: fam });
+  }
+  say('');
+  say('汇总: 有更新 ' + updates + ' / 已最新 ' + latest + ' / 检查失败 ' + failed + ' / 非家族跳过 ' + nonFamily);
+  for (var j = 0; j < lines.length; j++) out(lines[j]);
+  var code = (failed > 0) ? 1 : (updates > 0 ? 3 : 0);
+  return { code: code, rows: rows, updates: updates, latest: latest, failed: failed, nonFamily: nonFamily };
+}
+
+async function runUpdateAuto(opts, dest) {
+  out('yotta-skills（元阁）v' + VERSION + ' —— 检查并自动更新（仅 yotta-* 家族） -> ' + dest);
+  var r = await runUpdateCheck(Object.assign({}, opts, { json: false }), dest);
+  if (r.failed > 0) {
+    out('检查未完成（' + r.failed + ' 个失败），未自动更新；可先排查网络后重试。');
+    return { code: 1 };
+  }
+  if (r.updates === 0) {
+    out('全部已最新，无需更新。');
+    return { code: 0 };
+  }
+  out('');
+  out('检测到 ' + r.updates + ' 个家族技能可更新，开始自动更新（安装管线，含装前安全扫描）：');
+  var ok = 0, failed2 = 0;
+  for (var i = 0; i < r.rows.length; i++) {
+    var row = r.rows[i];
+    if (!row.hasUpdate) continue;
+    var res = installOne(Object.assign({}, row.family, { version: row.latest }), dest, Object.assign({}, opts, { force: true, pin: true }));
+    if (res.status === 'ok') ok++;
+    else if (res.status === 'skip') ok++;
+    else failed2++;
+  }
+  out('');
+  out('自动更新汇总: 成功 ' + ok + ' / 失败 ' + failed2);
+  maybeAutoReindex(opts, dest);
+  return { code: failed2 > 0 ? 1 : 0 };
 }
 
 function shouldSkip(name, isFile) {
@@ -458,6 +607,9 @@ function printHelp() {
   out('  --verify <path>  指定 yotta_verify.py 路径（默认找目标目录已装的元信）');
   out('  --json            inventory / reindex / route 时输出 JSON');
   out('  --route <需求>    静态编排路由（输出组合 / 顺序 / 依据 / 缺失技能建议）');
+  out('  --check            update 时仅只读检查更新（联网对 npm 最新版本，不改动；退出码 0/3/1）');
+  out('  --auto             update 时检查到家族更新后自动更新（仅 yotta-* 家族，含装前扫描）');
+  out('  --registry <url>  npm registry 地址（默认 https://registry.npmjs.org/；YOTTA_SKILLS_REGISTRY 覆盖）');
   out('  --project         inventory / reindex 时附加扫描当前项目 .agents/skills / .codex/skills');
   out('  --no-reindex      安装 / 更新后不自动重扫注册表');
   out('  -h, --help       帮助');
@@ -614,9 +766,23 @@ function main() {
     return;
   }
 
-  if (command === 'update') runUpdate(opts, dest);
-  else runInstall(opts, dest);
-  maybeAutoReindex(opts, dest);
+  if (command === 'update') {
+    if (opts.check || opts.auto) {
+      var runFn = opts.auto ? runUpdateAuto : runUpdateCheck;
+      runFn(opts, dest).then(function (r) {
+        if (opts.json && !opts.auto) {
+          out(JSON.stringify({ dest: dest, updatable: r.rows.filter(function (x) { return x.hasUpdate; }), updates: r.updates, latest: r.latest, failed: r.failed, nonFamily: r.nonFamily }, null, 2));
+        }
+        process.exitCode = r.code;
+      });
+    } else {
+      runUpdate(opts, dest);
+      maybeAutoReindex(opts, dest);
+    }
+  } else {
+    runInstall(opts, dest);
+    maybeAutoReindex(opts, dest);
+  }
 }
 
 main();
