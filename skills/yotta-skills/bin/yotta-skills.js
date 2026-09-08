@@ -35,7 +35,7 @@ function loadManifest() {
   try {
     data = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {
-    die('无法读取技能清单: ' + file + '（' + e.message + '）');
+    die('无法读取技能清单: ' + file + '（' + e.message + '）', 2, '检查 YOTTA_SKILLS_MANIFEST 或 skills.json 是否存在且为合法 JSON。');
   }
   const list = Array.isArray(data) ? data : data.skills;
   if (!Array.isArray(list) || list.length === 0) die('技能清单为空: ' + file);
@@ -85,8 +85,9 @@ function resolveUserDir(rel) {
 }
 
 // ── 工具函数 ───────────────────────────────────────────────────────────────
-function die(msg, code) {
+function die(msg, code, hint) {
   process.stderr.write('错误：' + msg + '\n');
+  if (hint) process.stderr.write('修复建议：' + hint + '\n');
   process.exit(code === undefined ? 2 : code);
 }
 function out(s) { process.stdout.write(s + '\n'); }
@@ -141,7 +142,7 @@ function parseArgs(argv) {
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    const take = (name) => { const v = argv[i + 1]; if (v === undefined || v.startsWith('--')) die(name + ' 缺少参数值'); i++; return v; };
+    const take = (name) => { const v = argv[i + 1]; if (v === undefined || v.startsWith('--')) die(name + ' 缺少参数值', 2, '请为该选项提供一个非空值；可用 --help 查看用法。'); i++; return v; };
     if (a === '--list' || a === '-l') opts.list = true;
     else if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--pin') opts.pin = true;
@@ -152,7 +153,7 @@ function parseArgs(argv) {
     else if (a === '--inventory' || a === '--inv') opts.inventory = true;
     else if (a === '--route') {
       const value = argv[i + 1];
-      if (value === undefined || value.startsWith('--')) die('--route 缺少需求摘要');
+      if (value === undefined || value.startsWith('--')) die('--route 缺少需求摘要', 2, '请提供一句需求描述，例如 --route "帮我做发布前质量检查"。');
       opts.route = value;
       i++;
     }
@@ -168,7 +169,7 @@ function parseArgs(argv) {
     else if (a === '--check') opts.check = true;
     else if (a === '--auto') opts.auto = true;
     else if (a === '--registry') opts.registry = take('--registry');
-    else if (a.startsWith('-')) die('未知参数: ' + a);
+    else if (a.startsWith('-')) die('未知参数: ' + a, 2, '可用 --help 查看支持的选项。');
     else positionals.push(a);
   }
   // 命令解析：install / update，其余位置参数 = 技能 slug（可多个）
@@ -201,7 +202,7 @@ function selectSkills(opts) {
   const picked = [];
   for (const slug of opts.skills) {
     const s = findSkill(slug);
-    if (!s) die('未知技能: ' + slug + '（可用: yotta-skills --list）');
+    if (!s) die('未知技能: ' + slug + '（可用: yotta-skills --list）', 2, '请先运行 --list 查看技能名，或检查拼写。');
     picked.push(s);
   }
   return picked;
@@ -748,7 +749,7 @@ function main() {
   let dest = resolveTargetDir(opts);
   if (!dest && !opts.dryRun) dest = detectProjectDir();
   if (!dest && command === 'install' && !opts.dryRun) {
-    die('未指定目标：请用 --agent <name> 或 --dir <path>（当前目录未检测到项目级技能目录）。', 4);
+    die('未指定目标：请用 --agent <name> 或 --dir <path>（当前目录未检测到项目级技能目录）。', 4, '未收录智能体也可用 --dir 指定其技能目录。');
   }
 
   if (opts.dryRun) {
@@ -785,4 +786,10 @@ function main() {
   }
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  process.stderr.write('错误：' + (err && err.message ? err.message : String(err)) + '\n');
+  process.stderr.write('修复建议：检查目标目录权限、npm 可用性与网络；可用 --help 查看用法。\n');
+  process.exitCode = 1;
+}
