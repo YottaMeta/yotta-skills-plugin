@@ -7,7 +7,7 @@
 |---|---|---|---|---|
 | `yotta-anti-shallow` | 元谨 | `@yottameta/yotta-anti-shallow` | 1.4.0 | 防 AI 敷衍规则引擎（深入分析/根因追溯时激活） |
 | `yotta-code-quality` | 元质 | `@yottameta/yotta-code-quality` | 0.4.0 | 结对式代码质量评审（十二类腐化风险 + 0-100 健康分） |
-| `yotta-workflow` | 元序 | `@yottameta/yotta-workflow` | 0.3.0 | 跨会话/跨项目通用工作流协议（状态就近存） |
+| `yotta-workflow` | 元序 | `@yottameta/yotta-workflow` | 0.4.0 | 跨会话/跨项目通用工作流协议（状态就近存） |
 | `yotta-memory` | 元忆 | `@yottameta/yotta-memory` | 0.11.0 | 有权限边界的文件式智能体记忆（FACT/PREF/BOUND/COMMIT） |
 | `yotta-learn` | 元习 | `@yottameta/yotta-learn` | 0.2.0 | 学习沉淀 CLI：错误/纠正/洞见沉淀为 .learnings/ 条目 |
 | `yotta-security-audit` | 元安 | `@yottameta/yotta-security-audit` | 0.2.2 | 安全扫描引擎：13 类检测器 + 系统安全基线 |
