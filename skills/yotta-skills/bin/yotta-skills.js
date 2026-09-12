@@ -24,6 +24,9 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const http = require('http');
 const https = require('https');
+const evidenceLib = require('../lib/install-evidence');
+const gateLib = require('../lib/verify-gate');
+const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
 let VERSION = '0.2.1';
@@ -343,19 +346,27 @@ async function runUpdateAuto(opts, dest) {
   }
   out('');
   out('检测到 ' + r.updates + ' 个家族技能可更新，开始自动更新（安装管线，含装前安全扫描）：');
-  var ok = 0, failed2 = 0;
+  var ok = 0, failed2 = 0, autoExitCode = 0;
   for (var i = 0; i < r.rows.length; i++) {
     var row = r.rows[i];
     if (!row.hasUpdate) continue;
-    var res = installOne(Object.assign({}, row.family, { version: row.latest }), dest, Object.assign({}, opts, { force: true, pin: true }));
+    var res = installOne(
+      Object.assign({}, row.family, { version: row.latest }),
+      dest,
+      Object.assign({}, opts, { force: true, pin: true, skipScan: false }),
+    );
     if (res.status === 'ok') ok++;
     else if (res.status === 'skip') ok++;
-    else failed2++;
+    else {
+      failed2++;
+      autoExitCode = Math.max(autoExitCode, res.exitCode || 1);
+      out('  ✘ ' + row.slug + '  失败: ' + res.note);
+    }
   }
   out('');
   out('自动更新汇总: 成功 ' + ok + ' / 失败 ' + failed2);
-  maybeAutoReindex(opts, dest);
-  return { code: failed2 > 0 ? 1 : 0 };
+  if (failed2 === 0) maybeAutoReindex(opts, dest);
+  return { code: failed2 > 0 ? autoExitCode : 0 };
 }
 
 function shouldSkip(name, isFile) {
@@ -399,17 +410,12 @@ function detectProjectDir() {
   return null;
 }
 
-// ── 元信 scan（若可用）─────────────────────────────────────────────────────
+// ── 元信 scan 与安装门禁 ──────────────────────────────────────────────────
 function findVerifyEngine(dest, opts) {
-  const cands = [];
-  if (opts.verify) cands.push(path.resolve(opts.verify));
-  if (process.env.YOTTA_SKILLS_VERIFY) cands.push(path.resolve(process.env.YOTTA_SKILLS_VERIFY));
-  if (dest) cands.push(path.join(dest, 'yotta-verify', 'scripts', 'yotta_verify.py'));
-  for (const c of cands) {
-    try { if (fs.statSync(c).isFile()) return c; } catch (_) { /* next */ }
-  }
-  return null;
+  const registry = require('../lib/skills-scan').readRegistry();
+  return gateLib.findVerifier({ dest, opts, registry });
 }
+
 function findPython(opts) {
   const cands = [];
   if (opts.python) cands.push(opts.python);
@@ -424,19 +430,29 @@ function findPython(opts) {
   }
   return null;
 }
+
 function runScan(engine, skillDir) {
   const python = findPython({});
-  if (!python) return { ok: false, note: '未找到 python（元信 scan 需要 Python 3.8+）' };
-  // -B：禁止 Python 写 __pycache__（否则会在引擎所在目录（可能是已装技能）留下 .pyc 污染）
-  const r = spawnSync(python, ['-B', engine, 'scan', skillDir, '--json'], { encoding: 'utf8', timeout: 60000 });
-  if (r.status === null) return { ok: false, note: '元信 scan 执行失败' };
-  try {
-    const j = JSON.parse(r.stdout);
-    const c = j.counts || {};
-    return { ok: true, verdict: j.verdict, counts: c };
-  } catch (_) {
-    return { ok: false, note: '元信 scan 输出无法解析' };
+  if (!python) return { ok: false, error: '未找到 Python（元信 scan 需要 Python 3.8+）' };
+  return gateLib.runVerifier(engine, skillDir, { python, spawnSync });
+}
+
+function scanTarget(engine, skillDir) {
+  const scan = runScan(engine, skillDir);
+  if (scan.ok) {
+    const counts = scan.counts || {};
+    const line = 'critical ' + (counts.critical || 0) + ' / high ' + (counts.high || 0) +
+      ' / medium ' + (counts.medium || 0) + ' / low ' + (counts.low || 0) +
+      ' / info ' + (counts.info || 0);
+    out('  元信 scan: ' + scan.verdict + '（' + line + '）');
+    if (scan.verdict === gateLib.BLOCK) out('  ⚠ 元信 verdict 为 DO NOT INSTALL，已阻断安装。');
+    else if (scan.verdict === gateLib.CAUTION || scan.verdict === gateLib.REVIEW) {
+      out('  ⚠ 元信 verdict 为 ' + scan.verdict + '，继续安装并保留风险证据。');
+    }
+  } else {
+    out('  元信 scan: ' + scan.error);
   }
+  return scan;
 }
 
 // ── 安装 ───────────────────────────────────────────────────────────────────
@@ -468,6 +484,13 @@ function runNpmPack(skill, opts, packDir) {
 }
 
 function extractTarball(tarball, extractDir) {
+  const listed = spawnSync(tarBin(), ['-tzf', tarball], { encoding: 'utf8', timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
+  if (listed.status !== 0) {
+    return { error: (listed.stderr || listed.stdout || 'tar 列表读取失败').trim().split('\n').pop() };
+  }
+  const entries = String(listed.stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const unsafe = entries.find((entry) => !isSafeTarEntry(entry));
+  if (unsafe) return { error: '压缩包包含不安全路径: ' + unsafe };
   const r = spawnSync(tarBin(), ['-xzf', tarball, '-C', extractDir], { encoding: 'utf8', timeout: 120000 });
   if (r.status !== 0) return { error: (r.stderr || r.stdout || 'tar 解压失败').trim().split('\n').pop() };
   const pkgDir = path.join(extractDir, 'package');
@@ -477,53 +500,64 @@ function extractTarball(tarball, extractDir) {
 
 const COPY_SKIP = new Set(['package.json', 'bin', 'node_modules', '.git', '__pycache__']);
 
-function installOne(skill, dest, opts) {
-  const target = path.join(dest, skill.slug);
-  const existing = readInstalledVersion(target);
-  if (!opts.force && existing === skill.version) {
-    return { skill, status: 'skip', version: existing, note: '已是最新' };
+function ensureGate(context) {
+  const { skill, extracted, dest, opts } = context;
+  const current = findVerifyEngine(dest, opts);
+  if (current) {
+    return {
+      ok: true,
+      engine: current,
+      mode: opts.bootstrap ? 'trusted-bootstrap' : 'installed',
+    };
   }
+  if (skill.slug === 'yotta-verify') {
+    const engine = path.join(extracted.pkgDir, 'scripts', 'yotta_verify.py');
+    if (!fs.existsSync(engine)) return { ok: false, error: '元信包内缺少 scripts/yotta_verify.py' };
+    return { ok: true, engine, mode: 'trusted-bootstrap' };
+  }
+
+  const verifier = findSkill('yotta-verify');
+  if (!verifier) return { ok: false, error: 'skills.json 缺少 yotta-verify' };
   let tmp;
   try {
-    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'yotta-skills-'));
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'yotta-verify-bootstrap-'));
     const packDir = path.join(tmp, 'pack');
     fs.mkdirSync(packDir, { recursive: true });
-    const packed = runNpmPack(skill, opts, packDir);
-    if (packed.error) {
-      if (packed.detail) out('    ' + packed.detail.split(/\r?\n/).filter(Boolean).slice(-12).join('\n    '));
-      return { skill, status: 'fail', version: null, note: packed.error };
-    }
+    const packed = runNpmPack(verifier, opts, packDir);
+    if (packed.error) return { ok: false, error: '元信自举下载失败: ' + packed.error };
     const extractDir = path.join(tmp, 'extract');
     fs.mkdirSync(extractDir, { recursive: true });
-    const extracted = extractTarball(packed.tarball, extractDir);
-    if (extracted.error) return { skill, status: 'fail', version: packed.resolved, note: extracted.error };
+    const extractedVerifier = extractTarball(packed.tarball, extractDir);
+    if (extractedVerifier.error) return { ok: false, error: '元信自举解包失败: ' + extractedVerifier.error };
+    const engine = path.join(extractedVerifier.pkgDir, 'scripts', 'yotta_verify.py');
+    if (!fs.existsSync(engine)) return { ok: false, error: '元信包内缺少 scripts/yotta_verify.py' };
 
-    // 元信 scan（若可用）：装前摘要，不拦截
-    if (!opts.skipScan) {
-      const engine = findVerifyEngine(dest, opts);
-      if (engine) {
-        const scan = runScan(engine, extracted.pkgDir);
-        if (scan.ok) {
-          const c = scan.counts;
-          const line = 'critical ' + (c.critical || 0) + ' / high ' + (c.high || 0) + ' / medium ' + (c.medium || 0) +
-                       ' / low ' + (c.low || 0) + ' / info ' + (c.info || 0);
-          out('  元信 scan: ' + scan.verdict + '（' + line + '）');
-          if (scan.verdict && /DO NOT INSTALL/.test(scan.verdict)) out('  ⚠ 元信 verdict 为 DO NOT INSTALL，请人工复核后再使用。');
-        } else {
-          out('  元信 scan: ' + scan.note);
-        }
-      }
-    }
-    fs.rmSync(target, { recursive: true, force: true });
-    fs.mkdirSync(target, { recursive: true });
-    copyDir(extracted.pkgDir, target, COPY_SKIP);
-    return { skill, status: 'ok', version: packed.resolved || skill.version, note: null };
-  } catch (e) {
-    return { skill, status: 'fail', version: null, note: e.message };
+    out('  元信未安装，使用可信源包自举并先自扫。');
+    const result = installOne(verifier, dest, {
+      ...opts,
+      force: true,
+      skipScan: false,
+      bootstrap: true,
+      verify: engine,
+    });
+    if (result.status !== 'ok') return { ok: false, error: '元信自举失败: ' + result.note };
+    const installedEngine = path.join(dest, 'yotta-verify', 'scripts', 'yotta_verify.py');
+    if (!fs.existsSync(installedEngine)) return { ok: false, error: '元信自举后未找到安装引擎' };
+    return { ok: true, engine: installedEngine, mode: 'trusted-bootstrap' };
   } finally {
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
+
+const installOne = createInstaller({
+  runNpmPack,
+  extractTarball,
+  copyDir: (src, dst) => copyDir(src, dst, COPY_SKIP),
+  readInstalledVersion,
+  ensureGate,
+  scanTarget,
+  appendEvidence: evidenceLib.appendEvidence,
+});
 
 function runInstall(opts, dest) {
   const skills = selectSkills(opts);
@@ -531,18 +565,29 @@ function runInstall(opts, dest) {
   out('版本策略: ' + (opts.pin ? 'pin（锁死清单精确版本）' : 'range（' + skillRange(skills[0]) + '，跟随最新 patch；--pin 锁死）'));
   const results = [];
   let failed = 0;
+  let exitCode = 0;
   for (const s of skills) {
     const r = installOne(s, dest, opts);
     results.push(r);
-    if (r.status === 'ok') out('  ✔ ' + s.slug.padEnd(22) + s.name + '  -> ' + (r.version || '?'));
+    if (r.status === 'ok') {
+      if (r.gate && r.gate.mode === 'explicit-unverified') {
+        out('  ⚠ ' + s.slug.padEnd(22) + '未执行装前扫描（explicit-unverified）');
+      }
+      out('  ✔ ' + s.slug.padEnd(22) + s.name + '  -> ' + (r.version || '?'));
+    }
     else if (r.status === 'skip') out('  - ' + s.slug.padEnd(22) + s.name + '  （' + r.note + '，v' + r.version + '）');
-    else { failed++; out('  ✘ ' + s.slug.padEnd(22) + s.name + '  失败: ' + r.note); }
+    else {
+      failed++;
+      exitCode = Math.max(exitCode, r.exitCode || 1);
+      out('  ✘ ' + s.slug.padEnd(22) + s.name + '  失败: ' + r.note);
+    }
   }
   const ok = results.filter(r => r.status === 'ok').length;
   const skip = results.filter(r => r.status === 'skip').length;
   out('');
   out('汇总: 成功 ' + ok + ' / 跳过(已是最新) ' + skip + ' / 失败 ' + failed + '（共 ' + results.length + '）');
-  if (failed > 0) process.exitCode = 1;
+  if (failed > 0) process.exitCode = exitCode || 1;
+  return { failed, exitCode };
 }
 
 function runUpdate(opts, dest) {
@@ -550,6 +595,7 @@ function runUpdate(opts, dest) {
   out('yotta-skills（元阁）v' + VERSION + ' —— 增量更新 -> ' + dest);
   const results = [];
   let failed = 0;
+  let exitCode = 0;
   for (const s of skills) {
     const existing = readInstalledVersion(path.join(dest, s.slug));
     if (existing === s.version) {
@@ -559,15 +605,25 @@ function runUpdate(opts, dest) {
     }
     const r = installOne(s, dest, opts);
     results.push(r);
-    if (r.status === 'ok') out('  ✔ ' + s.slug.padEnd(22) + s.name + '  -> ' + (r.version || '?') + (existing ? '（原 v' + existing + '）' : '（新装）'));
+    if (r.status === 'ok') {
+      if (r.gate && r.gate.mode === 'explicit-unverified') {
+        out('  ⚠ ' + s.slug.padEnd(22) + '未执行装前扫描（explicit-unverified）');
+      }
+      out('  ✔ ' + s.slug.padEnd(22) + s.name + '  -> ' + (r.version || '?') + (existing ? '（原 v' + existing + '）' : '（新装）'));
+    }
     else if (r.status === 'skip') out('  - ' + s.slug.padEnd(22) + s.name + '  （' + r.note + '）');
-    else { failed++; out('  ✘ ' + s.slug.padEnd(22) + s.name + '  失败: ' + r.note); }
+    else {
+      failed++;
+      exitCode = Math.max(exitCode, r.exitCode || 1);
+      out('  ✘ ' + s.slug.padEnd(22) + s.name + '  失败: ' + r.note);
+    }
   }
   const ok = results.filter(r => r.status === 'ok').length;
   const skip = results.filter(r => r.status === 'skip').length;
   out('');
   out('汇总: 更新 ' + ok + ' / 已是最新 ' + skip + ' / 失败 ' + failed);
-  if (failed > 0) process.exitCode = 1;
+  if (failed > 0) process.exitCode = exitCode || 1;
+  return { failed, exitCode };
 }
 
 // ── 展示 ───────────────────────────────────────────────────────────────────
@@ -777,12 +833,12 @@ function main() {
         process.exitCode = r.code;
       });
     } else {
-      runUpdate(opts, dest);
-      maybeAutoReindex(opts, dest);
+      const result = runUpdate(opts, dest);
+      if (!result.failed) maybeAutoReindex(opts, dest);
     }
   } else {
-    runInstall(opts, dest);
-    maybeAutoReindex(opts, dest);
+    const result = runInstall(opts, dest);
+    if (!result.failed) maybeAutoReindex(opts, dest);
   }
 }
 

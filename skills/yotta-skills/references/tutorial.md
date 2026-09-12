@@ -8,7 +8,7 @@
 
 - 学会 `--list` / `install` / `update` / `--dry-run` / `--pin` / `--force` 的用法；
 - 理解版本策略（range 与 --pin）与幂等行为；
-- 掌握元信装前摘要的开关与配置；
+- 了解元信装前门禁、元信自举与 `--skip-scan` 的人工应急边界；
 - 前置：Node.js 18+、npm、系统 tar（Windows 10+ 自带）；网络可访问 npm 注册表
   （国内可配置镜像或代理）。
 
@@ -76,22 +76,26 @@ dry-run 只打印将要执行的清单（含目标与版本策略），不联网
 npx -y @yottameta/yotta-skills install --agent codex --pin
 ```
 
-## 8. 强制重装与跳过元信摘要
+## 8. 强制重装与元信门禁
 
 ```bash
 npx -y @yottameta/yotta-skills install --agent codex --force     # 已是最新也重装
-npx -y @yottameta/yotta-skills install --agent codex --skip-scan # 跳过装前摘要
+npx -y @yottameta/yotta-skills install --agent codex --skip-scan # 人工应急：显式未验证
 ```
 
-元信（yotta-verify）已安装时默认会对每个待装技能输出装前摘要（verdict + 计数），仅提示
-不拦截；verdict 为 DO NOT INSTALL 时会提示人工复核。
+家族安装默认执行元信门禁：没有元信时，元阁先按可信源安装元信自身，再扫描待装技能。
+`DO NOT INSTALL` 会阻断安装；`INSTALL WITH CAUTION` / `REVIEW REQUIRED` 会继续但显示风险。
+旧版本会先快照到 `~/.yottaskills/snapshots/`，安装决策写入
+`~/.yottaskills/install-log.jsonl`。`--skip-scan` 只用于人工应急，会输出
+`explicit-unverified` 并留证，`update --auto` 不会使用它。
 
 ## 9. 验证安装结果
 
 - 看安装汇总：成功 N / 跳过 N / 失败 N；
 - 抽查技能目录：`ls ~/.codex/skills/yotta-memory/SKILL.md`；
 - 复核版本：每个技能 SKILL.md 的 frontmatter `version` 应与 `--list` 一致（这也是幂等
-  判断的依据）。
+  判断的依据）；
+- 需要安全复核时，查看 `~/.yottaskills/install-log.jsonl` 中的 verdict 与 `gate_mode`。
 
 ## 10. 常见问题
 

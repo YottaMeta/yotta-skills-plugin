@@ -1,7 +1,7 @@
 ---
 name: yotta-skills
-version: 0.7.2
-description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么自动装+自动用」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工可先跑 --reindex 与 update --check（联网只读检查更新）；自包含零依赖，不依赖任何元技能）；MCP 按需加载（可选：list_installed_skills/describe_skill/reindex/route_request，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / install / update / update --check（只读检查）/ update --auto（家族自动更新）/ --inventory / --reindex / --dry-run 预览 / --pin 锁版本。触发：需要批量安装或更新元阁全家技能、按场景组合多个元技能、路由或判断该用哪些技能、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/该用哪个技能/路由技能/盘点技能/查看已装技能 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能；装前摘要仅供参考，安装决策由用户确认。
+version: 0.8.0
+description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么自动装+自动用」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工可先跑 --reindex 与 update --check（联网只读检查更新）；自包含零依赖，不依赖任何元技能）；MCP 按需加载（可选：list_installed_skills/describe_skill/reindex/route_request，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / install / update / update --check（只读检查）/ update --auto（家族自动更新）/ --inventory / --reindex / --dry-run 预览 / --pin 锁版本。触发：需要批量安装或更新元阁全家技能、按场景组合多个元技能、路由或判断该用哪些技能、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/该用哪个技能/路由技能/盘点技能/查看已装技能 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
 license: MIT
 metadata:
   zh_name: 元阁
@@ -132,9 +132,9 @@ npx -y @yottameta/yotta-skills --reindex
 | `--dry-run` | 预览将执行的安装 / 更新清单；不联网、不改动 |
 | `--pin` | 锁死清单精确版本（默认 range：跟随同 major 最新 patch） |
 | `--force` | 已是最新也重新安装 |
-| `--skip-scan` | 跳过元信装前摘要（装了 yotta-verify 时默认自动启用） |
+| `--skip-scan` | 人工应急路径：跳过元信门禁并标记 `explicit-unverified`；不得用于 `update --auto` |
 | `--npm <path>` | 指定 npm 可执行文件 |
-| `--python <path>` | 指定 python 可执行文件（元信摘要用） |
+| `--python <path>` | 指定 python 可执行文件（元信 scan 用） |
 | `--verify <path>` | 指定 yotta_verify.py 路径 |
 | `-h, --help` / `-v, --version` | 帮助 / 版本 |
 
@@ -235,12 +235,19 @@ npx -y @yottameta/yotta-skills --route "检查代码质量，别糊弄" --json
 - 是否「已是最新」由目标目录 `<slug>/SKILL.md` 的 frontmatter `version` 与清单比对，
   一致即跳过（幂等）。
 
-## 元信装前摘要
+## 元信装前门禁
 
-安装时若检测到元信（yotta-verify）引擎，会对每个待装技能先跑一次装前摘要并打印 verdict
-与计数——仅提示、不拦截；verdict 为 DO NOT INSTALL 时会额外提示人工复核。
+家族安装默认执行装前扫描。若本机没有元信（yotta-verify），元阁先按 `skills.json`
+安装元信自身，再扫描待装技能。安装前会先读取包内 manifest、校验身份，再进入元信门禁：
+
+- `SAFE TO INSTALL`：继续安装；
+- `INSTALL WITH CAUTION` / `REVIEW REQUIRED`：继续安装，但显示风险并写入证据；
+- `DO NOT INSTALL` 或扫描失败：阻断，不替换旧版本。
+
 引擎查找顺序：`--verify` 指定路径 → 环境变量 `YOTTA_SKILLS_VERIFY` → 目标目录下已装的
-`yotta-verify/scripts/yotta_verify.py`。可用 `--skip-scan` 关闭。
+`yotta-verify/scripts/yotta_verify.py`。`--skip-scan` 只保留为人工应急路径，使用时输出
+`explicit-unverified` 并写入 `~/.yottaskills/install-log.jsonl`；`update --auto` 不会使用
+该开关。
 
 ## 支持智能体
 
@@ -254,7 +261,7 @@ npx -y @yottameta/yotta-skills --route "检查代码质量，别糊弄" --json
 |---|---|
 | `YOTTA_SKILLS_NPM` | 指定 npm 可执行文件（同 `--npm`） |
 | `YOTTA_SKILLS_NPM_FLAGS` | 追加传给 `npm pack` 的参数（按空白拆分，如 `--registry=...`） |
-| `YOTTA_SKILLS_PYTHON` | 指定 python 可执行文件（元信摘要用，同 `--python`） |
+| `YOTTA_SKILLS_PYTHON` | 指定 python 可执行文件（元信 scan 用，同 `--python`） |
 | `YOTTA_SKILLS_VERIFY` | 指定 yotta_verify.py 路径（同 `--verify`） |
 | `YOTTA_SKILLS_MANIFEST` | 指定技能清单 JSON 路径（默认随包 skills.json） |
 

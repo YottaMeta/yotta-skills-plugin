@@ -69,11 +69,15 @@ npx -y @yottameta/yotta-skills install yotta-memory yotta-workflow --agent codex
 
 ## 10. 安装前安全扫描怎么用？
 
-默认会查找可用的元信引擎并输出摘要；可用 `--verify <path>` 指定引擎，或 `--skip-scan` 关闭。扫描结果仅提示，不替代人工判断。
+家族安装默认执行元信门禁：没有元信时先自动自举，再扫描待装包。`DO NOT INSTALL`
+和扫描失败会阻断；`INSTALL WITH CAUTION` / `REVIEW REQUIRED` 会继续但显示风险。
+可用 `--verify <path>` 指定引擎。`--skip-scan` 只是人工应急路径，会标记
+`explicit-unverified`，`update --auto` 不使用它。
 
 ## 11. 安装失败后如何恢复？
 
-查看汇总中的失败原因，先修复目录权限或网络，再单独安装失败技能：
+查看汇总中的失败原因。旧版本快照保存在 `~/.yottaskills/snapshots/`，当前版本失败时
+新版本不会替换旧版本。先修复目录权限或网络，再单独安装失败技能：
 
 ```bash
 npx -y @yottameta/yotta-skills install <slug> --dir /path/to/skills
