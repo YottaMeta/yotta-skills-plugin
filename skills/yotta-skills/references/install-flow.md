@@ -12,7 +12,7 @@
 3. 系统 `tar -xzf` 解压到临时目录（产物应有 `SKILL.md`）；
 4. 读取包内 `skill-manifest.json`；没有 manifest 时使用 `skills.json` 的家族默认契约；
 5. 校验 slug / package / version / 权限 / 生命周期脚本路径；
-6. 元信装前扫描：已有元信则直接扫描；没有则自动安装元信自身，再扫描；
+6. 元信装前扫描：已有元信则直接扫描；没有则在本次已获用户确认的安装动作内自举元信自身，再扫描；
 7. 通过后创建旧版本快照，把新版本复制到同盘暂存目录，再原子切换到目标目录；
 8. 依次执行包内 setup、内置 doctor、包内自定义 doctor；任一步失败自动恢复旧版本；
 9. 汇总报告：✔ 成功 / - 跳过（已是最新）/ ✘ 失败；
@@ -35,8 +35,8 @@
 - 校验 `install.idempotent` 为 `true`；
 - 校验 setup / doctor / rollback 路径为包内相对路径，不能包含绝对路径或 `..`。
 
-没有 manifest 时使用家族默认契约：来源 `yottameta`、幂等安装、自动应用模式 `route`，
-不声明 MCP、hook 或自定义生命周期脚本。
+没有 manifest 时使用家族默认契约：来源 `yottameta`、幂等安装、应用模式 `route`
+（元阁只给路由建议，实际安装与调用由用户确认后执行），不声明 MCP、hook 或自定义生命周期脚本。
 
 ## 自定义生命周期脚本
 
@@ -52,7 +52,7 @@
 
 - `install` / `update` 完成后，CLI 自动调用 `--reindex`（同一套 `lib/skills-scan.js` 扫描核心）：
   重扫技能根目录 → 增量合并进 `~/.yottaskills/registry.json`（新增 / 更新 / 消失）。
-- `--no-reindex` 关闭自动重扫；`--reindex` 也可单独手动执行（会话开工 / 新装技能后）。
+- `--no-reindex` 关闭自动重扫；`--reindex` 也可单独手动执行（例如会话开工时或新装技能后）。
 - 与 `--inventory` 的区别：`--inventory` 侧重「盘点展示」（文本表格 / JSON 全量），
   `--reindex` 侧重「变化合并」（增量、输出聚焦新增 / 更新 / 消失，适合钩子与脚本）。
 
@@ -64,8 +64,8 @@
 
 ## 版本策略
 
-- 默认 range：spec = `<pkg>@<major>.x`（如 `0.x`），`npm pack` 取同 major 最新 patch；
-- `--pin`：spec = `<pkg>@<清单精确版本>`。
+- 默认 pin：spec = `<pkg>@<清单精确版本>`，完全可复现，不跟随浮动版本；
+- `--range`（可选）：spec = `<pkg>@<major>.x`（如 `0.x`），`npm pack` 取同 major 最新 patch。
 
 ## npm 解析（Windows）
 

@@ -15,6 +15,7 @@ stdio MCP server（JSON-RPC 2.0，换行分隔），把元阁技能扫描核心�
 MCP 客户端配置：
   {"mcpServers":{"yotta-skills":{"command":"python",
     "args":["<绝对路径>/scripts/yotta-skills-mcp.py"]}}}
+（写入客户端配置属于修改用户环境，必须先获得用户明确同意，并先展示目标文件与完整配置。）
 """
 
 import json
@@ -24,7 +25,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "0.19.1"
+VERSION = "0.19.2"
 TOOL_NAME = "yotta-skills"
 CN_NAME = "元阁"
 MCP_PROTOCOL_MODERN = "2026-07-28"

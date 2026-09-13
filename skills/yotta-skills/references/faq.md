@@ -5,8 +5,9 @@
 - **安装目标**：未指定目标怎么办 · 支持哪些智能体 · 装完为什么看不到
 - **网络与源**：国内访问慢 · 镜像延迟 · 网络失败
 - **更新**：`update --check` 退出码 · 后台周检缓存 · 自动更新边界 · 幂等
-- **版本**：`--pin` 与默认策略 · 清单漂移 · 单技能安装
+- **版本**：默认 `--pin` 与 `--range` · 清单漂移 · 单技能安装
 - **安全**：装前扫描 · 目标目录校验 · 失败恢复
+- **授权**：会不会自动装技能 / 自动写全局记忆 / 自动改 MCP 配置
 
 ---
 
@@ -58,9 +59,10 @@ YOTTA_SKILLS_NPM_FLAGS="--registry=https://registry.npmmirror.com" npx -y @yotta
 
 不会。默认按清单版本判断，已一致的技能跳过；需要强制覆盖时加 `--force`。
 
-## 7. `--pin` 和默认版本策略怎么选？
+## 7. `--pin` 和 `--range` 怎么选？
 
-默认策略是同 major 跟随最新 patch，适合日常使用；`--pin` 锁定清单精确版本，适合可复现部署。
+默认是 `--pin`：按清单精确版本安装，完全可复现、不会静默跟随浮动版本。
+只有你明确想跟随同 major 的最新 patch 时才加 `--range`。
 
 ## 8. 为什么清单和文档版本会不一致？
 
@@ -105,3 +107,9 @@ npx -y @yottameta/yotta-skills install <slug> --dir /path/to/skills
 ## 13. `hook evaluate` 会真的拦截动作吗？
 
 不一定。适配层先探测宿主能力：`native-block` 才能声明动作前阻断；`native-audit` 只能审计并触发一次纠偏，结果会标记 `explicit-unverified`；`wrapper-only` 仅在 wrapper 注册后保证；未知宿主全部按 `unsupported` 处理。当前 Codex 已实测能力见 `hook capabilities --host codex`。
+
+## 14. 元阁会自动安装技能、写全局记忆或改 MCP 配置吗？
+
+不会。元阁只给建议：`--route` 输出缺失技能与安装命令，安装动作由你执行或确认后才发生；
+写客户端 `mcpServers` 配置、把编排护栏写进全局记忆（如 `AGENTS.md` / `CLAUDE.md`）都需要**事先明确同意**，
+并会先展示目标文件与完整文本。你拒绝写入时，元阁不写任何文件，直接以 CLI 方式继续工作。

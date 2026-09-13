@@ -15,7 +15,7 @@
  *   npx -y @yottameta/yotta-skills hook evaluate --event before_send --manifest <file>  # 评估并留证
  *   npx -y @yottameta/yotta-skills --dry-run              # 预览将安装清单（不联网、不改动）
  *
- * 版本策略：清单锁定 `major.x`（不锁死 patch，维护性更新随最新）；--pin 锁死精确版本。
+ * 版本策略：默认 `--pin` 锁死清单精确版本（可复现，不静默跟随浮动版本）；`--range` 才跟随同 major 最新 patch。
  * 依赖：Node.js 18+；npm（pack）；系统 tar（解压）；元信 scan 可选（装了 yotta-verify 自动启用）。
  * 边界：只做「清单 + 下载 + 落位 + 汇总」；不内置任何技能本体；不 -g 污染。
  */
@@ -37,7 +37,7 @@ const hookAdapterLib = require('../lib/hook-adapter');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.19.1';
+let VERSION = '0.19.2';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -144,7 +144,7 @@ function resolveNpm(opts) {
 
 function parseArgs(argv) {
   const opts = {
-    list: false, dryRun: false, pin: false, skipScan: false, force: false,
+    list: false, dryRun: false, pin: true, skipScan: false, force: false,
     help: false, version: false, agent: null, dir: null, npm: null,
     python: null, verify: null, command: null, skill: null, rest: [],
     inventory: false, reindex: false, noReindex: false, json: false, project: false, route: null,
@@ -158,6 +158,7 @@ function parseArgs(argv) {
     if (a === '--list' || a === '-l') opts.list = true;
     else if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--pin') opts.pin = true;
+    else if (a === '--range') opts.pin = false;
     else if (a === '--skip-scan') opts.skipScan = true;
     else if (a === '--force') opts.force = true;
     else if (a === '--help' || a === '-h') opts.help = true;
@@ -691,7 +692,7 @@ const installOne = createInstaller({
 function runInstall(opts, dest) {
   const skills = selectSkills(opts);
   out('yotta-skills（元阁）v' + VERSION + ' —— 安装 ' + skills.length + ' 个技能 -> ' + dest);
-  out('版本策略: ' + (opts.pin ? 'pin（锁死清单精确版本）' : 'range（' + skillRange(skills[0]) + '，跟随最新 patch；--pin 锁死）'));
+  out('版本策略: ' + (opts.pin ? 'pin（锁死清单精确版本，默认）' : 'range（' + skillRange(skills[0]) + '，跟随最新 patch）'));
   const results = [];
   let failed = 0;
   let exitCode = 0;
@@ -1049,7 +1050,7 @@ function runRollback(opts, dest) {
 function printList(opts) {
   const skills = opts.skills.length ? selectSkills(opts) : MANIFEST;
   out('yotta-skills（元阁）v' + VERSION + ' —— 全家技能清单（' + skills.length + ' 个）');
-  out('版本策略: ' + (opts.pin ? 'pin（精确锁定）' : 'range（' + skillRange(skills[0]) + ' 起，跟随最新 patch；--pin 锁死）'));
+  out('版本策略: ' + (opts.pin ? 'pin（精确锁定，默认）' : 'range（' + skillRange(skills[0]) + ' 起，跟随最新 patch）'));
   out('');
   for (const s of skills) {
     out('  ' + s.slug.padEnd(22) + s.name.padEnd(5) + ' ' + specOf(s, opts.pin).padEnd(52) + ' ' + s.version + '  ' + s.desc);
@@ -1073,7 +1074,7 @@ function printHelp() {
   out('  yotta-skills rollback --dir <path>  回滚最近一次技能安装或更新（--list 查看快照）');
   out('  yotta-skills --dry-run              预览将安装清单（不联网、不改动）');
   out('  yotta-skills --inventory            盘点本机已装技能（自研扫描，不依赖任何元技能）');
-  out('  yotta-skills --reindex              重扫注册表（会话开工 / 装技能后自动调用；增量合并）');
+  out('  yotta-skills --reindex              重扫注册表（手动触发；install / update 完成后 CLI 自动重扫）');
   out('  yotta-skills --route "<需求摘要>"   给出场景组合、调用顺序、缺失技能安装建议');
   out('  yotta-skills hook capabilities       查看宿主六事件能力矩阵');
   out('  yotta-skills hook evaluate --event <event> --manifest <file>  评估 hook 声明并留证');
@@ -1083,7 +1084,8 @@ function printHelp() {
   out('选项:');
   out('  --agent <name>   智能体键名（--list 可查看；未知智能体请用 --dir）');
   out('  --dir <path>     目标技能目录（技能会装到 <path>/<slug>）');
-  out('  --pin            锁死清单精确版本（默认 range：跟随同 major 最新 patch）');
+  out('  --pin            锁死清单精确版本（默认）');
+  out('  --range          跟随同 major 最新 patch（非默认：显式指定后才浮动跟随）');
   out('  --force          已是最新也重装');
   out('  --skip-scan      跳过元信装前 scan（装了 yotta-verify 自动启用）');
   out('  --npm <path>     指定 npm 可执行文件（默认 npm / npm.cmd）');
@@ -1146,7 +1148,7 @@ function runInventory(opts) {
   }
 }
 
-/** --reindex：重扫 + 增量合并，变化聚焦输出（供会话开工 / 钩子使用）。 */
+/** --reindex：重扫 + 增量合并，变化聚焦输出（手动触发 / 供钩子或脚本调用）。 */
 function runReindex(opts) {
   const scan = require('../lib/skills-scan');
   const { result, registry, changes } = reindexRegistry(opts);
