@@ -89,6 +89,15 @@ npx -y @yottameta/yotta-skills install --agent codex --skip-scan # 人工应急�
 `~/.yottaskills/install-log.jsonl`。`--skip-scan` 只用于人工应急，会输出
 `explicit-unverified` 并留证，`update --auto` 不会使用它。
 
+安装阶段还会按包内 manifest 执行 setup / doctor；setup 或 doctor 失败时自动恢复旧版本。
+可以用 `doctor` 只读自检，用 `rollback` 校验并恢复最近快照：
+
+```bash
+npx -y @yottameta/yotta-skills doctor --agent codex --slug yotta-memory
+npx -y @yottameta/yotta-skills rollback --list --agent codex
+npx -y @yottameta/yotta-skills rollback --slug yotta-memory --agent codex
+```
+
 ## 9. 验证安装结果
 
 - 看安装汇总：成功 N / 跳过 N / 失败 N；
@@ -108,6 +117,11 @@ npx -y @yottameta/yotta-skills install --agent codex --skip-scan # 人工应急�
 - **目标未指定**：当前目录没有项目级技能目录时报错（退出码 4），加 `--agent` 或
   `--dir`。
 - **已有旧版本**：默认按 range 覆盖升级到最新 patch；`--pin` 则锁定清单版本。
+- **doctor 报注册表版本不一致**：运行 `yotta-skills --reindex` 重扫注册表；doctor 本身不会写文件。
+- **需要撤销最近安装 / 更新**：先用 `rollback --list` 查看快照，再执行
+  `rollback --slug <slug>`；恢复前会自动校验快照。
+- **后台更新检查没有输出**：`update --check --scheduled` 在未到期、已最新或网络失败时
+  文本模式保持静默；需要诊断时加 `--json`。
 
 ## 11. 盘点已装技能与 re-index（新装技能自动被发现）
 
@@ -122,6 +136,9 @@ npx -y @yottameta/yotta-skills --reindex
 - `install` / `update` 完成后会自动重扫注册表（`~/.yottaskills/registry.json`），新装 / 更新的
   技能随即出现在 `--inventory` / `--reindex` 里；`--no-reindex` 可关闭自动重扫。
 - 建议每会话开工先跑一次 `--reindex`（快速增量，只合并变化），让后装的技能自动被看见。
+- 更新检查不再作为会话开工默认动作：手动检查用 `update --check`；后台周检用
+  `update --check --scheduled`，未到期不联网，到期只检查一次并写
+  `~/.yottaskills/update-check.json`。
 
 ## 编排路由（--route）
 
@@ -134,3 +151,16 @@ npx -y @yottameta/yotta-skills --route "检查代码质量，别糊弄"
 输出会告诉你命中哪个组合、按什么顺序调用、每个技能负责什么、哪些已装、哪些缺失，以及缺失技能的安装命令。元阁只给建议，不会自动安装；安装前请先做装前安全扫描，并由用户确认。
 - `--json` 输出机器可读结果（含新增 / 更新 / 消失），适合脚本与钩子。
 - 如果本机还装了非元阁家族技能，`--route` 会额外列出「其他已装技能候选」：只按 frontmatter description 与需求文本做本地机械匹配，标注来源、得分、命中词项与扫描状态（默认未扫描），不读取全文指令、不自动调用；使用/安装前请先做装前安全扫描。
+
+## 运行时 hook 适配（hook）
+
+技能 manifest 只声明六个统一事件的要求；元阁负责能力探测、确定性评估、证据留痕和降级标注：
+
+```bash
+npx -y @yottameta/yotta-skills hook capabilities --host codex --json
+npx -y @yottameta/yotta-skills hook evaluate --host codex --event before_send --manifest ./skill-manifest.json --context '{"checks":{}}' --json
+npx -y @yottameta/yotta-skills hook bind --host codex --manifest ./skill-manifest.json
+```
+
+`native-block` 才会显示动作前阻断；`native-audit` 只能审计并触发一次纠偏，结果标
+`explicit-unverified`；未知宿主全部按 `unsupported` 处理。本层不联网、不下载、不改宿主配置文件。

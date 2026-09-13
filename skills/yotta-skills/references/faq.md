@@ -4,7 +4,7 @@
 
 - **安装目标**：未指定目标怎么办 · 支持哪些智能体 · 装完为什么看不到
 - **网络与源**：国内访问慢 · 镜像延迟 · 网络失败
-- **更新**：`update --check` 退出码 · 自动更新边界 · 幂等
+- **更新**：`update --check` 退出码 · 后台周检缓存 · 自动更新边界 · 幂等
 - **版本**：`--pin` 与默认策略 · 清单漂移 · 单技能安装
 - **安全**：装前扫描 · 目标目录校验 · 失败恢复
 
@@ -43,6 +43,13 @@ YOTTA_SKILLS_NPM_FLAGS="--registry=https://registry.npmmirror.com" npx -y @yotta
 
 该命令只读，不修改文件。
 
+## 4.1 `update --check --scheduled` 什么时候用？
+
+它是后台周检入口：默认 7 天加 0 到 24 小时随机抖动，未到期不联网；到期只检查一次，
+结果写入 `~/.yottaskills/update-check.json`。文本模式网络失败静默并退出 0，
+`--json` 可读取 `error` / `cache` 诊断字段。会话开工只建议做本地 `--reindex`，
+不默认联网更新检查。
+
 ## 5. `update --auto` 会更新所有技能吗？
 
 只自动更新元阁家族内技能（`yotta-*` 且在清单中）。其他已装技能只提示，不自动改动。
@@ -76,8 +83,16 @@ npx -y @yottameta/yotta-skills install yotta-memory yotta-workflow --agent codex
 
 ## 11. 安装失败后如何恢复？
 
-查看汇总中的失败原因。旧版本快照保存在 `~/.yottaskills/snapshots/`，当前版本失败时
-新版本不会替换旧版本。先修复目录权限或网络，再单独安装失败技能：
+查看汇总中的失败原因。setup / doctor 失败时元阁会自动恢复旧版本；旧版本快照仍保存在
+`~/.yottaskills/snapshots/`。可以先用 `doctor` 自检，再用 `rollback` 恢复最近快照：
+
+```bash
+npx -y @yottameta/yotta-skills doctor --dir /path/to/skills --slug <slug>
+npx -y @yottameta/yotta-skills rollback --list --dir /path/to/skills
+npx -y @yottameta/yotta-skills rollback --slug <slug> --dir /path/to/skills
+```
+
+如果只是安装源或网络问题，再单独安装失败技能：
 
 ```bash
 npx -y @yottameta/yotta-skills install <slug> --dir /path/to/skills
@@ -86,3 +101,7 @@ npx -y @yottameta/yotta-skills install <slug> --dir /path/to/skills
 ## 12. 装完为什么智能体里看不到？
 
 确认安装目录与智能体实际读取目录一致；安装后通常需要重启会话或重新加载技能列表。
+
+## 13. `hook evaluate` 会真的拦截动作吗？
+
+不一定。适配层先探测宿主能力：`native-block` 才能声明动作前阻断；`native-audit` 只能审计并触发一次纠偏，结果会标记 `explicit-unverified`；`wrapper-only` 仅在 wrapper 注册后保证；未知宿主全部按 `unsupported` 处理。当前 Codex 已实测能力见 `hook capabilities --host codex`。

@@ -30,15 +30,23 @@ npx -y @yottameta/yotta-skills --agent codex
 npx -y @yottameta/yotta-skills update --check --agent codex
 ```
 
-2. 根据输出确认可更新清单。
+2. 如果由后台调度执行，改用周检入口：
 
-3. 执行增量更新：
+```bash
+npx -y @yottameta/yotta-skills update --check --scheduled --agent codex
+```
+
+未到期时不联网；到期只检查一次并把结果写入 `~/.yottaskills/update-check.json`。
+
+3. 根据输出确认可更新清单。
+
+4. 执行增量更新：
 
 ```bash
 npx -y @yottameta/yotta-skills update --agent codex
 ```
 
-4. 复核：已最新的技能应显示跳过，落后的技能显示更新；失败项单独重装。
+5. 复核：已最新的技能应显示跳过，落后的技能显示更新；失败项单独重装。
 
 ## 走查 3：按路由安装单个技能
 

@@ -14,7 +14,7 @@
 5. 校验 slug / package / version / 权限 / 生命周期脚本路径；
 6. 元信装前扫描：已有元信则直接扫描；没有则自动安装元信自身，再扫描；
 7. 通过后创建旧版本快照，把新版本复制到同盘暂存目录，再原子切换到目标目录；
-8. setup / doctor 阶段执行内置检查；P0-2.1 不执行自定义生命周期脚本；
+8. 依次执行包内 setup、内置 doctor、包内自定义 doctor；任一步失败自动恢复旧版本；
 9. 汇总报告：✔ 成功 / - 跳过（已是最新）/ ✘ 失败；
 10. 全部成功后自动 re-index 本地技能注册表（`~/.yottaskills/registry.json`）：重扫技能根目录并增量合并，
    新装 / 更新的技能随即进入注册表（`--no-reindex` 可关闭；`--dry-run` 不触发）。
@@ -37,6 +37,16 @@
 
 没有 manifest 时使用家族默认契约：来源 `yottameta`、幂等安装、自动应用模式 `route`，
 不声明 MCP、hook 或自定义生命周期脚本。
+
+## 自定义生命周期脚本
+
+包内 `skill-manifest.json` 可声明 `install.setup` / `install.doctor` /
+`install.rollback`，值必须是包内相对路径，不能是绝对路径或包含 `..`。
+
+元阁用当前 Node.js 直接执行脚本，不经过 shell。脚本接收 `--skill-dir` /
+`--package-dir` / `--dest`，rollback 另接收 `--snapshot`，并始终追加 `--json`；
+脚本必须输出一个 JSON 对象，至少包含 `ok`。setup 或 doctor 失败时，先恢复旧版本，
+再在声明了 rollback 时调用它。生命周期结果、回滚结果和快照路径都会写入安装证据。
 
 ## re-index（装技能后自动重扫注册表）
 
@@ -78,13 +88,52 @@
 - `--skip-scan` 只保留为人工应急路径，使用时输出 `explicit-unverified` 并写入证据；
 - `update --auto` 始终执行装前门禁，不接受 `--skip-scan`。
 
+## 更新检查缓存
+
+- 手动 `update --check`：每次联网，只读，保持退出码 0 / 3 / 1。
+- 后台周检 `update --check --scheduled`：默认 7 天加 0 到 24 小时随机抖动；未到期直接返回，
+  到期只检查一次；文本失败静默，`--json` 保留诊断。
+- 缓存文件：`~/.yottaskills/update-check.json`；按目标技能目录隔离记录，
+  字段包含 `last_checked`、`next_check`、`last_result`、`last_error`。
+- 本缓存只记录版本检查结果与网络错误，不记录技能内容或用户数据。
+
+## 运行时 hook 适配
+
+- `hook capabilities --host <name>`：查看六个统一事件的四档宿主能力；未知宿主默认 `unsupported`。
+- `hook evaluate --host <name> --event <event> --manifest <file> --context <json>`：按 manifest 顺序评估声明，输出 `allow` / `block` / `warn` / `unverified`。
+- `hook bind --manifest <file>` / `hook unbind <id>`：幂等注册或反注册声明，不直接改写宿主配置。
+- 评估证据写入 `~/.yottaskills/hook-log.jsonl`，绑定记录写入 `~/.yottaskills/hook-bindings.json`。
+- `native-audit` 不等于强制；缺少能力或证据时必须显示 `explicit-unverified`。
+
 ## 快照与回滚
 
 - 旧版本快照：`~/.yottaskills/snapshots/<slug>/<timestamp>-<version>-<随机后缀>/`；
+- 新快照同时写入 `<快照目录>.meta.json`，包含 SHA-256 摘要、版本、文件数和来源；
+- 无元数据的旧快照仍可按 `SKILL.md` 做结构校验；
 - 新版本先落在 `<dest>/.yottaskills-staging/<slug>-<随机后缀>/`；
 - 旧目标先重命名为同盘备份，再把暂存目录切到目标；切换失败时恢复备份；
 - 证据写入失败会触发回滚，不把安装标记为成功；
 - Windows 上对 `EPERM` / `EACCES` / `EBUSY` 做短重试，避免杀毒或索引服务造成的瞬时锁。
+
+回滚命令：
+
+```bash
+yotta-skills rollback --list --dir <skills-dir>
+yotta-skills rollback --slug <slug> --dir <skills-dir>
+```
+
+恢复前校验快照摘要；恢复时先在目标目录同盘暂存，再替换当前目录。恢复成功后执行
+内置 doctor 和自定义 doctor，并保留原快照供再次恢复。
+
+## doctor
+
+```bash
+yotta-skills doctor --dir <skills-dir> --slug <slug>
+yotta-skills doctor --dir <skills-dir> --json
+```
+
+doctor 只读检查目录、`SKILL.md`、版本、manifest 身份、注册表记录和自定义 doctor，
+不会修改目标目录或注册表。注册表版本不一致属于 warning，可用 `--reindex` 修复。
 
 ## 安装证据
 
