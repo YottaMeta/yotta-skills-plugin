@@ -19,7 +19,7 @@
 | `yotta-security-testing` | 元测 | `@yottameta/yotta-security-testing` | 0.3.0 | 有纪律的 AI 安全测试方法论 + Scope Guard 五道防线 |
 | `yotta-agent-hardening` | 元安全 | `@yottameta/yotta-agent-hardening` | 0.2.4 | 防御向 AI 智能体自身安全加固（配置面静态扫描三域） |
 | `yotta-skill-creator` | 元造 | `@yottameta/yotta-skill-creator` | 0.1.1 | 工坊「造」：端到端造技能脚手架 |
-| `yotta-publish-guard` | 元守 | `@yottameta/yotta-publish-guard` | 0.4.0 | 工坊「守」：发布前守门（版本四件对齐 + 三通道查重） |
+| `yotta-publish-guard` | 元守 | `@yottameta/yotta-publish-guard` | 0.4.1 | 工坊「守」：发布前守门（版本四件对齐 + 三通道查重） |
 | `yotta-logwatch` | 元察 | `@yottameta/yotta-logwatch` | 0.2.8 | 安全日志分析检测引擎（攻击链识别/告警聚合） |
 | `yotta-intel` | 元情 | `@yottameta/yotta-intel` | 0.2.0 | 威胁情报 IOC 提取与规范化引擎（STIX-lite） |
 | `yotta-secret` | 元钥 | `@yottameta/yotta-secret` | 0.2.0 | 密钥 / 凭据泄露源头扫描引擎 |

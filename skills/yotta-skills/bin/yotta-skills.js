@@ -37,7 +37,7 @@ const hookAdapterLib = require('../lib/hook-adapter');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.18.0';
+let VERSION = '0.19.0';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
