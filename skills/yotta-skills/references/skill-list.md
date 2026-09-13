@@ -8,14 +8,14 @@
 | `yotta-anti-shallow` | 元谨 | `@yottameta/yotta-anti-shallow` | 1.4.0 | 防 AI 敷衍规则引擎（深入分析/根因追溯时激活） |
 | `yotta-code-quality` | 元质 | `@yottameta/yotta-code-quality` | 0.4.0 | 结对式代码质量评审（十二类腐化风险 + 0-100 健康分） |
 | `yotta-workflow` | 元序 | `@yottameta/yotta-workflow` | 0.4.1 | 跨会话/跨项目通用工作流协议（状态就近存） |
-| `yotta-memory` | 元忆 | `@yottameta/yotta-memory` | 0.13.0 | 有权限边界的文件式智能体记忆（FACT/PREF/BOUND/COMMIT） |
+| `yotta-memory` | 元忆 | `@yottameta/yotta-memory` | 0.13.1 | 有权限边界的文件式智能体记忆（FACT/PREF/BOUND/COMMIT） |
 | `yotta-learn` | 元习 | `@yottameta/yotta-learn` | 0.2.0 | 学习沉淀 CLI：错误/纠正/洞见沉淀为 .learnings/ 条目 |
 | `yotta-security-audit` | 元安 | `@yottameta/yotta-security-audit` | 0.2.3 | 安全扫描引擎：13 类检测器 + 系统安全基线 |
 | `yotta-vetter` | 元审 | `@yottameta/yotta-vetter` | 0.2.3 | 安全审查协议：四阶段 review + SAFE TO INSTALL 判定 |
 | `yotta-recon` | 元析 | `@yottameta/yotta-recon` | 0.1.6 | 跨智能体网络侦察：零依赖端口/服务/版本指纹探测 |
 | `yotta-guardian` | 元盾 | `@yottameta/yotta-guardian` | 0.1.3 | 跨智能体危险调用拦截护栏：确定性规则 + 可插拔意图验证 |
 | `yotta-humanize` | 元真 | `@yottameta/yotta-humanize` | 0.2.0 | 去 AI 味中文写作编辑：检测器引擎 |
-| `yotta-logs` | 元史 | `@yottameta/yotta-logs` | 0.3.0 | 跨智能体历史会话 / 记忆日志检索 |
+| `yotta-logs` | 元史 | `@yottameta/yotta-logs` | 0.3.1 | 跨智能体历史会话 / 记忆日志检索 |
 | `yotta-security-testing` | 元测 | `@yottameta/yotta-security-testing` | 0.3.0 | 有纪律的 AI 安全测试方法论 + Scope Guard 五道防线 |
 | `yotta-agent-hardening` | 元安全 | `@yottameta/yotta-agent-hardening` | 0.2.4 | 防御向 AI 智能体自身安全加固（配置面静态扫描三域） |
 | `yotta-skill-creator` | 元造 | `@yottameta/yotta-skill-creator` | 0.1.1 | 工坊「造」：端到端造技能脚手架 |
