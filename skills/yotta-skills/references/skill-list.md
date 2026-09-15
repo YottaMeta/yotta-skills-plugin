@@ -1,7 +1,7 @@
 # 全家技能清单（22 个）
 
 > 机器权威源：`skills.json`（随包分发）；本文件为人工可读副本，新技能发布后须同步更新
-> `skills.json`（登记表为内部台账，不随包分发）。清单更新日期：2026-09-09。
+> `skills.json`（登记表为内部台账，不随包分发）。清单更新日期：2026-09-14。
 
 | slug | 中文名 | npm 包 | 清单版本 | 说明 |
 |---|---|---|---|---|
@@ -18,7 +18,7 @@
 | `yotta-logs` | 元史 | `@yottameta/yotta-logs` | 0.3.1 | 跨智能体历史会话 / 记忆日志检索 |
 | `yotta-security-testing` | 元测 | `@yottameta/yotta-security-testing` | 0.3.0 | 有纪律的 AI 安全测试方法论 + Scope Guard 五道防线 |
 | `yotta-agent-hardening` | 元安全 | `@yottameta/yotta-agent-hardening` | 0.2.4 | 防御向 AI 智能体自身安全加固（配置面静态扫描三域） |
-| `yotta-skill-creator` | 元造 | `@yottameta/yotta-skill-creator` | 0.1.1 | 工坊「造」：端到端造技能脚手架 |
+| `yotta-skill-creator` | 元造 | `@yottameta/yotta-skill-creator` | 0.1.2 | 工坊「造」：端到端造技能脚手架 |
 | `yotta-publish-guard` | 元守 | `@yottameta/yotta-publish-guard` | 0.4.1 | 工坊「守」：发布前守门（版本四件对齐 + 三通道查重） |
 | `yotta-logwatch` | 元察 | `@yottameta/yotta-logwatch` | 0.2.8 | 安全日志分析检测引擎（攻击链识别/告警聚合） |
 | `yotta-intel` | 元情 | `@yottameta/yotta-intel` | 0.2.0 | 威胁情报 IOC 提取与规范化引擎（STIX-lite） |
@@ -26,7 +26,7 @@
 | `yotta-chain` | 元链 | `@yottameta/yotta-chain` | 0.1.2 | 供应链依赖校验引擎 |
 | `yotta-triage` | 元鉴 | `@yottameta/yotta-triage` | 0.1.2 | 恶意样本静态初筛引擎（哈希/熵/字符串/PE-ELF） |
 | `yotta-prompt` | 元引 | `@yottameta/yotta-prompt` | 0.2.0 | 意图澄清 + 生态入口（常驻注入，map 串联元阁全家） |
-| `yotta-verify` | 元信 | `@yottameta/yotta-verify` | 0.3.0 | 装前安全扫描器 + audited 徽章（prompt injection + 危险模式） |
+| `yotta-verify` | 元信 | `@yottameta/yotta-verify` | 0.3.1 | 装前安全扫描器 + audited 徽章（prompt injection + 危险模式） |
 
 ## 家族分布
 
