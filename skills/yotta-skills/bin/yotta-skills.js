@@ -37,7 +37,7 @@ const hookAdapterLib = require('../lib/hook-adapter');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.19.4';
+let VERSION = '0.19.5';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -1189,7 +1189,15 @@ function runRoute(opts) {
   out('');
   out('调用顺序:');
   for (const skill of result.skills) {
-    out('  ' + skill.order + '. ' + skill.slug + ' [' + (skill.installed ? '已装' : '缺失') + '] - ' + skill.role);
+    const status = skill.installed
+      ? '已装' + (skill.version ? ' v' + skill.version : '')
+      : '缺失';
+    const conflictHint = skill.conflicts && skill.conflicts.length
+      ? '（其他副本: ' + skill.conflicts
+        .map((item) => (item.source || '其他') + ' v' + (item.version || '?'))
+        .join('、') + '）'
+      : '';
+    out('  ' + skill.order + '. ' + skill.slug + ' [' + status + '] - ' + skill.role + conflictHint);
   }
   if (result.missing_skills.length) {
     out('');
