@@ -37,7 +37,7 @@ const hookAdapterLib = require('../lib/hook-adapter');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.19.5';
+let VERSION = '0.19.6';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -614,14 +614,19 @@ function runNpmPack(skill, opts, packDir) {
 }
 
 function extractTarball(tarball, extractDir) {
-  const listed = spawnSync(tarBin(), ['-tzf', tarball], { encoding: 'utf8', timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
+  const packDir = path.dirname(tarball);
+  const tarballName = path.basename(tarball);
+  fs.mkdirSync(extractDir, { recursive: true });
+  // 传相对文件名给 tar，避免 Windows 盘符被 MSYS tar 当成远端 host。
+  const listed = spawnSync(tarBin(), ['-tzf', tarballName], { cwd: packDir, encoding: 'utf8', timeout: 120000, maxBuffer: 16 * 1024 * 1024 });
   if (listed.status !== 0) {
     return { error: (listed.stderr || listed.stdout || 'tar 列表读取失败').trim().split('\n').pop() };
   }
   const entries = String(listed.stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const unsafe = entries.find((entry) => !isSafeTarEntry(entry));
   if (unsafe) return { error: '压缩包包含不安全路径: ' + unsafe };
-  const r = spawnSync(tarBin(), ['-xzf', tarball, '-C', extractDir], { encoding: 'utf8', timeout: 120000 });
+  const relativeTarball = path.relative(extractDir, tarball).replace(/\\/g, '/');
+  const r = spawnSync(tarBin(), ['-xzf', relativeTarball], { cwd: extractDir, encoding: 'utf8', timeout: 120000 });
   if (r.status !== 0) return { error: (r.stderr || r.stdout || 'tar 解压失败').trim().split('\n').pop() };
   const pkgDir = path.join(extractDir, 'package');
   if (!fs.existsSync(path.join(pkgDir, 'SKILL.md'))) return { error: '解压产物缺少 SKILL.md（' + tarball + '）' };
