@@ -23,7 +23,7 @@
 | `yotta-logwatch` | 元察 | `@yottameta/yotta-logwatch` | 0.2.8 | 安全日志分析检测引擎（攻击链识别/告警聚合） |
 | `yotta-intel` | 元情 | `@yottameta/yotta-intel` | 0.2.0 | 威胁情报 IOC 提取与规范化引擎（STIX-lite） |
 | `yotta-secret` | 元钥 | `@yottameta/yotta-secret` | 0.2.0 | 密钥 / 凭据泄露源头扫描引擎 |
-| `yotta-chain` | 元链 | `@yottameta/yotta-chain` | 0.1.3 | 供应链依赖校验引擎 |
+| `yotta-chain` | 元链 | `@yottameta/yotta-chain` | 0.1.4 | 供应链依赖校验引擎 |
 | `yotta-triage` | 元鉴 | `@yottameta/yotta-triage` | 0.1.3 | 恶意样本静态初筛引擎（哈希/熵/字符串/PE-ELF） |
 | `yotta-prompt` | 元引 | `@yottameta/yotta-prompt` | 0.2.2 | 意图澄清 + 生态入口（常驻注入，map 串联元阁全家） |
 | `yotta-verify` | 元信 | `@yottameta/yotta-verify` | 0.3.1 | 装前安全扫描器 + audited 徽章（prompt injection + 危险模式） |
