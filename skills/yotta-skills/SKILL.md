@@ -1,6 +1,6 @@
 ---
 name: yotta-skills
-version: 0.19.6
+version: 0.19.7
 description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点 + 运行时 hook 适配。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么组合使用（安装与调用均由用户确认后执行）」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录（默认 --pin 锁死清单精确版本）；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工只建议跑本地 --reindex；更新检查走手动 --check 或后台 --check --scheduled）；运行时适配层：hook capabilities / evaluate / bind / unbind 按宿主能力矩阵执行六个统一事件并留证降级，元信 before_install 已接入安装管线；自包含零依赖，不依赖任何元技能；MCP 按需加载且需用户确认后写入配置（可选：list_installed_skills/describe_skill/reindex/route_request，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / install / update / update --check（只读检查）/ update --check --scheduled（后台周检）/ update --auto（家族自动更新）/ hook 适配 / --inventory / --reindex / --dry-run 预览 / --pin（默认）/ --range。触发：需要批量安装或更新元阁全家技能、按场景组合多个元技能、路由或判断该用哪些技能、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、评估宿主 hook 能力、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/hook 适配/该用哪个技能/路由技能/盘点技能/查看已装技能 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index + hook 适配」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能、不静默写宿主配置或全局记忆；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
 license: MIT
 metadata:
@@ -191,6 +191,7 @@ npx -y @yottameta/yotta-skills hook unbind <binding-id>
 
 元阁自带技能扫描核心（零依赖，不依赖任何元技能）：扫描各智能体技能目录，解析
 `SKILL.md` frontmatter，生成/更新本地注册表 `~/.yottaskills/registry.json`，数据不出本机。
+多 agent 宿主可用 `YOTTA_SKILLS_REGISTRY_FILE` 为每个 agent 指定独立注册表文件。
 适合「装了哪些技能、各干嘛、从哪来」的快速盘点。
 
 ```bash
@@ -301,12 +302,16 @@ npx -y @yottameta/yotta-skills --route "检查代码质量，别糊弄" --json
      "mcpServers": {
        "yotta-skills": {
          "command": "python",
-         "args": ["<技能目录>/scripts/yotta-skills-mcp.py"]
+         "args": ["<技能目录>/scripts/yotta-skills-mcp.py"],
+         "env": {
+           "YOTTA_SKILLS_REGISTRY_FILE": "<配置目录>/yottaskills/<agentId>/registry.json"
+         }
        }
      }
    }
    ```
    > `<技能目录>` = 本技能实际安装目录，**不要写死盘符路径**；Windows 用 `python`，Linux/macOS 用 `python3`。
+   > 单 agent 环境可不设 `YOTTA_SKILLS_REGISTRY_FILE`；同一宿主内多 agent 共用 MCP 时，应分别配置独立路径，避免注册表状态互相覆盖。
 3. **提醒用户**：改 `mcpServers` 后多数客户端需**重启 / 重载一次** MCP server 才生效；加载后应看到
    `list_installed_skills` / `describe_skill` / `reindex` / `route_request` 四个工具。
 4. **降级兜底（重要）**：若客户端未暴露 MCP 工具 / 用户拒绝改配置 / 无法改配置 / server 未加载，**自动降级 CLI**

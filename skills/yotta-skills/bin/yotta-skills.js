@@ -37,7 +37,7 @@ const hookAdapterLib = require('../lib/hook-adapter');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.19.6';
+let VERSION = '0.19.7';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -1113,7 +1113,7 @@ function printHelp() {
   out('  -v, --version    版本');
   out('');
   out('支持智能体: ' + Object.keys(AGENT_DIRS).join(', '));
-  out('依赖: Node.js 18+ / npm / 系统 tar；环境变量 YOTTA_SKILLS_NPM / YOTTA_SKILLS_PYTHON / YOTTA_SKILLS_VERIFY / YOTTA_SKILLS_NPM_FLAGS 可覆盖。');
+  out('依赖: Node.js 18+ / npm / 系统 tar；环境变量 YOTTA_SKILLS_NPM / YOTTA_SKILLS_PYTHON / YOTTA_SKILLS_VERIFY / YOTTA_SKILLS_NPM_FLAGS / YOTTA_SKILLS_REGISTRY_FILE 可覆盖。');
 }
 
 

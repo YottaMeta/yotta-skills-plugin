@@ -9,7 +9,8 @@ stdio MCP server（JSON-RPC 2.0，换行分隔），把元阁技能扫描核心�
   route_request          按需求摘要给出静态编排路由建议
 
 自包含原则：扫描由元阁自带核心（bin/yotta-skills.js --inventory / --reindex）完成，
-不依赖任何元技能；数据只写本机 ~/.yottaskills/registry.json，不出本机。
+不依赖任何元技能；数据只写本机注册表，默认 ~/.yottaskills/registry.json，
+可用 YOTTA_SKILLS_REGISTRY_FILE 为每个 agent 指定隔离路径，数据不出本机。
 
 运行：python scripts/yotta-skills-mcp.py
 MCP 客户端配置：
@@ -25,7 +26,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "0.19.6"
+VERSION = "0.19.7"
 TOOL_NAME = "yotta-skills"
 CN_NAME = "元阁"
 MCP_PROTOCOL_MODERN = "2026-07-28"
@@ -35,7 +36,13 @@ SERVERS = {TOOL_NAME: {"name": TOOL_NAME, "cn": CN_NAME, "version": VERSION}}
 
 _HERE = Path(__file__).resolve().parent
 BIN_JS = (_HERE.parent / "bin" / "yotta-skills.js").resolve()
-REGISTRY_FILE = Path(os.path.expanduser("~/.yottaskills/registry.json"))
+
+
+def _registry_file():
+    override = os.environ.get("YOTTA_SKILLS_REGISTRY_FILE", "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path(os.path.expanduser("~/.yottaskills/registry.json"))
 
 
 def _tool_error(message, extra=None):
@@ -74,10 +81,11 @@ def _run_cli(args):
 
 
 def _read_registry():
-    if not REGISTRY_FILE.is_file():
+    registry_file = _registry_file()
+    if not registry_file.is_file():
         return None
     try:
-        return json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
+        return json.loads(registry_file.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return None
 
@@ -90,7 +98,7 @@ def _ensure_registry():
     _run_cli(["--inventory"])
     reg = _read_registry()
     if reg is None:
-        raise RuntimeError("技能注册表生成失败（~/.yottaskills/registry.json）")
+        raise RuntimeError("技能注册表生成失败（%s）" % _registry_file())
     return reg
 
 
@@ -106,7 +114,7 @@ def _tool_list(arguments):  # noqa: ARG001
     skills = _skills_list(registry)
     payload = {
         "count": len(skills),
-        "registry": str(REGISTRY_FILE),
+        "registry": str(_registry_file()),
         "skills": skills,
     }
     return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}],
@@ -136,7 +144,7 @@ def _tool_reindex(arguments):  # noqa: ARG001
         "count": data.get("count", len(data.get("skills", []))),
         "changes": data.get("changes"),
         "errors": data.get("errors"),
-        "registry": str(REGISTRY_FILE),
+        "registry": str(_registry_file()),
     }
     return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}],
             "isError": False}
@@ -168,7 +176,7 @@ def mcp_tools():
         _tool_spec(
             "list_installed_skills",
             "盘点本机已装技能：返回技能列表（slug / 版本 / 功能一句话 / 来源）。"
-            "读本地注册表 ~/.yottaskills/registry.json；未生成则先扫描一次。"
+            "读本地注册表（YOTTA_SKILLS_REGISTRY_FILE，默认 ~/.yottaskills/registry.json）；未生成则先扫描一次。"
             "扫描由元阁自带核心完成，不依赖任何其他技能。数据不出本机。",
             {},
             [],
