@@ -1,6 +1,6 @@
 ---
 name: yotta-skills
-version: 0.19.12
+version: 0.19.13
 description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点 + 运行时 hook 适配。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么组合使用（安装与调用均由用户确认后执行）」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录（默认 --pin 锁死清单精确版本）；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工只建议跑本地 --reindex；更新检查走手动 --check 或后台 --check --scheduled）；运行时适配层：hook capabilities / evaluate / bind / unbind 按宿主能力矩阵执行六个统一事件并留证降级，元信 before_install 已接入安装管线；自包含零依赖，不依赖任何元技能；MCP 按需加载且需用户确认后写入配置（可选：list_installed_skills/describe_skill/reindex/route_request，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / install / update / update --check（只读检查）/ update --check --scheduled（后台周检）/ update --auto（家族自动更新）/ hook 适配 / --inventory / --reindex / --dry-run 预览 / --pin（默认）/ --range。触发：需要批量安装或更新元阁全家技能、按场景组合多个元技能、路由或判断该用哪些技能、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、评估宿主 hook 能力、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/hook 适配/该用哪个技能/路由技能/盘点技能/查看已装技能 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index + hook 适配」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能、不静默写宿主配置或全局记忆；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
 license: MIT
 metadata:
@@ -341,10 +341,14 @@ npx -y @yottameta/yotta-skills --route "检查代码质量，别糊弄" --json
 - `INSTALL WITH CAUTION` / `REVIEW REQUIRED`：继续安装，但显示风险并写入证据；
 - `DO NOT INSTALL` 或扫描失败：阻断，不替换旧版本。
 
-引擎查找顺序：`--verify` 指定路径 → 环境变量 `YOTTA_SKILLS_VERIFY` → 目标目录下已装的
-`yotta-verify/scripts/yotta_verify.py`。`--skip-scan` 只保留为人工应急路径，使用时输出
-`explicit-unverified` 并写入 `~/.yottaskills/install-log.jsonl`；`update --auto` 不会使用
-该开关。
+引擎查找顺序（v0.19.13 收紧）：`--verify` 指定路径 → 环境变量 `YOTTA_SKILLS_VERIFY` →
+**受信安装记录**（`~/.yottaskills/trusted-verifier.json`，由安装管线在元信安装 / 更新成功后写入，
+记录包身份 + 引擎路径 + SHA-256）。候选引擎必须同时满足：路径不经符号链接跳转、
+包内 `SKILL.md` 与 `skill-manifest.json` 身份一致（slug / package / trust / 版本）、
+引擎摘要与记录一致；任一不满足即 fail-closed，改走自举安装。
+不再按本地注册表里 `name: yotta-verify` 的目录发现引擎。
+`--skip-scan` 只保留为人工应急路径，使用时输出 `explicit-unverified` 并写入
+`~/.yottaskills/install-log.jsonl`；`update --auto` 不会使用该开关。
 
 ## 支持智能体
 

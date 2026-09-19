@@ -26,7 +26,7 @@
 | `yotta-chain` | 元链 | `@yottameta/yotta-chain` | 0.1.4 | 供应链依赖校验引擎 |
 | `yotta-triage` | 元鉴 | `@yottameta/yotta-triage` | 0.1.3 | 恶意样本静态初筛引擎（哈希/熵/字符串/PE-ELF） |
 | `yotta-prompt` | 元引 | `@yottameta/yotta-prompt` | 0.2.2 | 意图澄清 + 生态入口（常驻注入，map 串联元阁全家） |
-| `yotta-verify` | 元信 | `@yottameta/yotta-verify` | 0.3.1 | 装前安全扫描器 + audited 徽章（prompt injection + 危险模式） |
+| `yotta-verify` | 元信 | `@yottameta/yotta-verify` | 0.3.2 | 装前安全扫描器 + audited 徽章（prompt injection + 危险模式） |
 
 ## 家族分布
 

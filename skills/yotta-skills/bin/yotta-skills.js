@@ -29,6 +29,7 @@ const http = require('http');
 const https = require('https');
 const evidenceLib = require('../lib/install-evidence');
 const gateLib = require('../lib/verify-gate');
+const trustedVerifierLib = require('../lib/trusted-verifier');
 const healthLib = require('../lib/install-health');
 const lifecycleLib = require('../lib/install-lifecycle');
 const snapshotLib = require('../lib/install-snapshot');
@@ -37,7 +38,7 @@ const hookAdapterLib = require('../lib/hook-adapter');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.19.11';
+let VERSION = '0.19.13';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -542,8 +543,26 @@ function detectProjectDir() {
 
 // ── 元信 scan 与安装门禁 ──────────────────────────────────────────────────
 function findVerifyEngine(dest, opts) {
-  const registry = require('../lib/skills-scan').readRegistry();
-  return gateLib.findVerifier({ dest, opts, registry });
+  // v0.19.13：不再用注册表（身份来自被扫描技能自己的 frontmatter）发现校验器，
+  // 只认安装管线写入的受信记录（路径 + 摘要双绑定）。
+  return gateLib.findVerifier({ dest, opts, trustedVerifier: trustedVerifierLib.loadRecord() });
+}
+
+/** 安装 / 更新元信成功后写入受信记录（身份 + 摘要），后续门禁只认这份记录。 */
+function recordTrustedVerifier(dest) {
+  const engine = path.join(dest, 'yotta-verify', 'scripts', 'yotta_verify.py');
+  const check = trustedVerifierLib.verifyEngine(engine, { requireRecord: false });
+  if (!check.ok) return null;
+  const record = {
+    slug: check.info.slug,
+    package: check.info.package,
+    version: check.info.version,
+    path: check.path,
+    sha256: check.info.sha256,
+    recordedAt: new Date().toISOString(),
+  };
+  trustedVerifierLib.saveRecord(record);
+  return record;
 }
 
 function findPython(opts) {
@@ -678,6 +697,9 @@ function ensureGate(context) {
     if (result.status !== 'ok') return { ok: false, error: '元信自举失败: ' + result.note };
     const installedEngine = path.join(dest, 'yotta-verify', 'scripts', 'yotta_verify.py');
     if (!fs.existsSync(installedEngine)) return { ok: false, error: '元信自举后未找到安装引擎' };
+    if (!recordTrustedVerifier(dest)) {
+      return { ok: false, error: '元信自举后身份 / 摘要校验未通过（fail-closed，不执行该引擎）' };
+    }
     return { ok: true, engine: installedEngine, mode: 'trusted-bootstrap' };
   } finally {
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
@@ -708,6 +730,7 @@ function runInstall(opts, dest) {
       if (r.gate && r.gate.mode === 'explicit-unverified') {
         out('  ⚠ ' + s.slug.padEnd(22) + '未执行装前扫描（explicit-unverified）');
       }
+      if (s.slug === 'yotta-verify') recordTrustedVerifier(dest);
       out('  ✔ ' + s.slug.padEnd(22) + s.name + '  -> ' + (r.version || '?'));
     }
     else if (r.status === 'skip') out('  - ' + s.slug.padEnd(22) + s.name + '  （' + r.note + '，v' + r.version + '）');
@@ -744,6 +767,7 @@ function runUpdate(opts, dest) {
       if (r.gate && r.gate.mode === 'explicit-unverified') {
         out('  ⚠ ' + s.slug.padEnd(22) + '未执行装前扫描（explicit-unverified）');
       }
+      if (s.slug === 'yotta-verify') recordTrustedVerifier(dest);
       out('  ✔ ' + s.slug.padEnd(22) + s.name + '  -> ' + (r.version || '?') + (existing ? '（原 v' + existing + '）' : '（新装）'));
     }
     else if (r.status === 'skip') out('  - ' + s.slug.padEnd(22) + s.name + '  （' + r.note + '）');
