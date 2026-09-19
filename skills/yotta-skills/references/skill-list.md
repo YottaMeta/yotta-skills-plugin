@@ -13,7 +13,7 @@
 | `yotta-security-audit` | 元安 | `@yottameta/yotta-security-audit` | 0.2.4 | 安全扫描引擎：13 类检测器 + 系统安全基线 |
 | `yotta-vetter` | 元审 | `@yottameta/yotta-vetter` | 0.2.5 | 安全审查协议：四阶段 review + SAFE TO INSTALL 判定 |
 | `yotta-recon` | 元析 | `@yottameta/yotta-recon` | 0.1.7 | 跨智能体网络侦察：零依赖端口/服务/版本指纹探测 |
-| `yotta-guardian` | 元盾 | `@yottameta/yotta-guardian` | 0.1.4 | 跨智能体危险调用拦截护栏：确定性规则 + 可插拔意图验证 |
+| `yotta-guardian` | 元盾 | `@yottameta/yotta-guardian` | 0.1.5 | 跨智能体危险调用拦截护栏：确定性规则 + 可插拔意图验证 |
 | `yotta-humanize` | 元真 | `@yottameta/yotta-humanize` | 0.2.1 | 去 AI 味中文写作编辑：检测器引擎 |
 | `yotta-logs` | 元史 | `@yottameta/yotta-logs` | 0.3.1 | 跨智能体历史会话 / 记忆日志检索 |
 | `yotta-security-testing` | 元测 | `@yottameta/yotta-security-testing` | 0.3.1 | 有纪律的 AI 安全测试方法论 + Scope Guard 五道防线 |
