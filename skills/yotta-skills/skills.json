@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "updated": "2026-09-23",
+  "updated": "2026-09-25",
   "note": "清单同步要求：每次技能发布新版本后，按 YottaSkills 技能登记表更新本文件（登记表为内部台账，不随包分发）。",
   "skills": [
     {
@@ -28,7 +28,7 @@
       "slug": "yotta-memory",
       "name": "元忆",
       "pkg": "@yottameta/yotta-memory",
-      "version": "0.16.7",
+      "version": "0.17.0",
       "desc": "有权限边界的文件式智能体记忆（FACT/PREF/BOUND/COMMIT）"
     },
     {
@@ -156,6 +156,41 @@
       "pkg": "@yottameta/yotta-verify",
       "version": "0.3.2",
       "desc": "装前安全扫描器 + audited 徽章（prompt injection + 危险模式）"
+    },
+    {
+      "slug": "yotta-compliance",
+      "name": "元规",
+      "pkg": "@yottameta/yotta-compliance",
+      "version": "0.1.0",
+      "desc": "本地确定性合规条款审查（PIPL + 数据出境规则包 / 证据锚点 / 框架覆盖分级）"
+    },
+    {
+      "slug": "yotta-mirror",
+      "name": "元镜",
+      "pkg": "@yottameta/yotta-mirror",
+      "version": "0.1.0",
+      "desc": "本地确定性学情分析（知识点掌握率 / 分层与临界生 / 薄弱点诊断，学生数据不出本机）"
+    },
+    {
+      "slug": "yotta-lesson",
+      "name": "元案",
+      "pkg": "@yottameta/yotta-lesson",
+      "version": "0.1.0",
+      "desc": "本地确定性教案骨架与覆盖校验（课标映射 / 环节时间精确分配 / 缺口检查）"
+    },
+    {
+      "slug": "yotta-item",
+      "name": "元题",
+      "pkg": "@yottameta/yotta-item",
+      "version": "0.1.0",
+      "desc": "本地确定性组卷与试卷校验（双向细目表 / 题库选题 / 缺口检查）"
+    },
+    {
+      "slug": "yotta-school-doc",
+      "name": "元公",
+      "pkg": "@yottameta/yotta-school-doc",
+      "version": "0.1.2",
+      "desc": "本地确定性学校公文可信起草与校验（文种规则包 / 可复算骨架 / 12 类缺口）"
     }
   ]
 }
