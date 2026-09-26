@@ -28,7 +28,7 @@
       "slug": "yotta-memory",
       "name": "元忆",
       "pkg": "@yottameta/yotta-memory",
-      "version": "0.17.4",
+      "version": "0.18.0",
       "desc": "有权限边界的文件式智能体记忆（FACT/PREF/BOUND/COMMIT）"
     },
     {
