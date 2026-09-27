@@ -10,7 +10,7 @@
 | `yotta-workflow` | 元序 | `@yottameta/yotta-workflow` | 0.4.2 | 跨会话/跨项目通用工作流协议（状态就近存） |
 | `yotta-memory` | 元忆 | `@yottameta/yotta-memory` | 0.18.1 | 有权限边界的文件式智能体记忆（FACT/PREF/BOUND/COMMIT） |
 | `yotta-learn` | 元习 | `@yottameta/yotta-learn` | 0.2.1 | 学习沉淀 CLI：错误/纠正/洞见沉淀为 .learnings/ 条目 |
-| `yotta-security-audit` | 元安 | `@yottameta/yotta-security-audit` | 0.2.4 | 安全扫描引擎：13 类检测器 + 系统安全基线 |
+| `yotta-security-audit` | 元安 | `@yottameta/yotta-security-audit` | 0.3.0 | 安全扫描引擎：13 类检测器 + 系统安全基线 + 学生数据隐私（教育版） |
 | `yotta-vetter` | 元审 | `@yottameta/yotta-vetter` | 0.2.6 | 安全审查协议：四阶段 review + SAFE TO INSTALL 判定 |
 | `yotta-recon` | 元析 | `@yottameta/yotta-recon` | 0.1.7 | 跨智能体网络侦察：零依赖端口/服务/版本指纹探测 |
 | `yotta-guardian` | 元盾 | `@yottameta/yotta-guardian` | 0.1.6 | 跨智能体危险调用拦截护栏：确定性规则 + 可插拔意图验证 |

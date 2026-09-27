@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "updated": "2026-09-26",
+  "updated": "2026-09-27",
   "note": "清单同步要求：每次技能发布新版本后，按 YottaSkills 技能登记表更新本文件（登记表为内部台账，不随包分发）。",
   "skills": [
     {
@@ -42,8 +42,8 @@
       "slug": "yotta-security-audit",
       "name": "元安",
       "pkg": "@yottameta/yotta-security-audit",
-      "version": "0.2.4",
-      "desc": "安全扫描引擎：13 类检测器 + 系统安全基线"
+      "version": "0.3.0",
+      "desc": "安全扫描引擎：13 类检测器 + 系统安全基线 + 学生数据隐私（教育版）"
     },
     {
       "slug": "yotta-vetter",
