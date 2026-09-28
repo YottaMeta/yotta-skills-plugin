@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "updated": "2026-09-27",
+  "updated": "2026-09-28",
   "note": "清单同步要求：每次技能发布新版本后，按 YottaSkills 技能登记表更新本文件（登记表为内部台账，不随包分发）。",
   "skills": [
     {
@@ -63,7 +63,7 @@
       "slug": "yotta-guardian",
       "name": "元盾",
       "pkg": "@yottameta/yotta-guardian",
-      "version": "0.1.6",
+      "version": "0.1.7",
       "desc": "跨智能体危险调用拦截护栏：确定性规则 + 可插拔意图验证"
     },
     {
