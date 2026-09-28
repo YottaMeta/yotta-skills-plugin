@@ -1,0 +1,101 @@
+# 扩展提供方协议 v1（元阁 · capability `o1.route`）
+
+元阁可以可选地调用一个由用户显式配置的**本地扩展提供方（provider）**，由它在已装技能白名单内
+对静态路由结果做增补 / 重排。未配置提供方时，`--route` 的行为与输出与之前完全一致。
+
+## 1. 配置
+
+配置文件：`<YOTTA_PROVIDER_HOME>/provider.json`，默认 `~/.yottameta/provider.json`。
+环境变量 `YOTTA_PROVIDER_HOME` 可覆盖根目录（测试与隔离环境用）。
+
+```json
+{
+  "schema": 1,
+  "providers": [
+    {
+      "id": "local-provider",
+      "version": "0.1.0",
+      "capabilities": ["o1.route"],
+      "command": ["node", "C:/path/to/provider.js"],
+      "timeout_ms": 600
+    }
+  ]
+}
+```
+
+- `command` 必须是**数组**（argv 语义），以 `shell: false` 执行；不接受字符串命令。
+- `timeout_ms` 默认 600，最小 50，最大 5000；超时即回落。
+- 配置文件缺失、解析失败、`command` 非数组、capability 未知：**只记录状态，不阻断命令**；缺失等同「未安装」。
+
+## 2. 调用
+
+- 只在用户显式执行 `--route`（CLI）或 `route_request`（MCP，内部走同一 CLI）时触发；安装 / 更新 / 盘点等路径不触发。
+- 元阁把**一个 JSON 请求**写入 provider 的 stdin（随后关闭），从 stdout 读**一个 JSON 响应**；stderr 只作诊断。
+- stdout 上限 256 KB；超过按错误处理并回落。
+
+```json
+{
+  "schema": 1,
+  "capability": "o1.route",
+  "request_id": "<uuid>",
+  "payload": {
+    "request": "帮我做发布前质量检查",
+    "static_result": {
+      "playbook": "delivery-quality-gate",
+      "confidence": "high",
+      "skills": ["yotta-anti-shallow", "yotta-code-quality", "yotta-publish-guard"]
+    },
+    "installed_skills": [
+      { "slug": "yotta-code-quality", "version": "0.3.0", "sources": ["Codex"] }
+    ]
+  }
+}
+```
+
+## 3. 响应
+
+```json
+{
+  "ok": true,
+  "capability": "o1.route",
+  "data": {
+    "skills": [
+      { "slug": "yotta-code-quality", "role": "可选：补充代码质量评审" },
+      { "slug": "yotta-anti-shallow" }
+    ]
+  }
+}
+```
+
+- `skills[].slug` 必须 ∈ `installed_skills` 白名单；未安装或未知的 slug 会被丢弃并记入 `dropped`，不会写入结果。
+- `role` 可选；缺省时增补条目使用「由扩展提供方补充」。
+- 元阁先算静态结果：provider 给出的顺序用于重排；静态结果中未被提及的技能会**追加保留**，不会丢失。
+- 返回空列表 / 全是不合法 slug：视为未应用（`applied = false`），静态结果原样返回。
+
+需要授权或不可用时：
+
+```json
+{ "ok": false, "code": "license_required", "message": "该能力需要授权后使用" }
+```
+
+## 4. 状态与回落
+
+| 状态 | 触发 | 元阁行为 |
+| --- | --- | --- |
+| `not_installed` | 无配置 / 无匹配 capability | 纯静态路由，文本输出与历史一致 |
+| `active` | 调用成功且响应合法 | 白名单内增补 / 重排，静态结果保留 |
+| `license_required` | provider 明确返回该 code | 纯静态路由 +「需授权」提示 |
+| `timeout` | 超过 `timeout_ms` | 纯静态路由 + 一行状态提示 |
+| `invalid_output` | 非 JSON / 缺 `ok` | 纯静态路由 + 一行状态提示 |
+| `error` | 启动失败 / 退出码非 0 / 输出超限 / 配置非法 | 纯静态路由 + 一行状态提示 |
+
+`--json` 输出始终包含 `dynamic` 块：`status` / `provider_id` / `applied` / `added` / `dropped` / `note`；
+CLI 文本输出只在状态非 `not_installed` 时多一行「动态路由: ...」，退出码不受影响（始终 0）。
+
+## 5. 审计与边界
+
+- 每次实际调用写一行 `<YOTTA_PROVIDER_HOME>/provider-audit.jsonl`：`ts` / `capability` / `provider_id` / `status` / `duration_ms` / `bytes_out`。
+- 审计**不记录**需求原文或任何 payload 内容。
+- 元阁不替 provider 联网；provider 自身行为由它自己的包声明。
+- 删除 `provider.json` 即回到纯静态路由，无残留依赖。
+- provider 输出只当数据使用：白名单外的 slug、非法结构一律丢弃，不作为指令执行。
