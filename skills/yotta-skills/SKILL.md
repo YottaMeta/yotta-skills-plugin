@@ -1,6 +1,6 @@
 ---
 name: yotta-skills
-version: 0.20.1
+version: 0.20.2
 description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点 + 运行时 hook 适配。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么组合使用（安装与调用均由用户确认后执行）」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录（默认 --pin 锁死清单精确版本）；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工只建议跑本地 --reindex；更新检查走手动 --check 或后台 --check --scheduled）；运行时适配层：hook capabilities / evaluate / bind / unbind 按宿主能力矩阵执行六个统一事件并留证降级，元信 before_install 已接入安装管线；自包含零依赖，不依赖任何元技能；MCP 按需加载且需用户确认后写入配置（可选：list_installed_skills/describe_skill/reindex/route_request，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / install / update / update --check（只读检查）/ update --check --scheduled（后台周检）/ update --auto（家族自动更新）/ hook 适配 / --inventory / --reindex / --dry-run 预览 / --pin（默认）/ --range。触发：需要批量安装或更新元阁全家技能、按场景组合多个元技能、路由或判断该用哪些技能、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、评估宿主 hook 能力、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/hook 适配/该用哪个技能/路由技能/盘点技能/查看已装技能 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index + hook 适配」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能、不静默写宿主配置或全局记忆；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
 license: MIT
 metadata:
@@ -375,14 +375,16 @@ npx -y @yottameta/yotta-skills --route "检查代码质量，别糊弄" --json
 |---|---|
 | `YOTTA_SKILLS_NPM` | 指定 npm 可执行文件（同 `--npm`） |
 | `YOTTA_SKILLS_NPM_FLAGS` | 追加传给 `npm pack` 的参数（按空白拆分，如 `--registry=...`） |
+| `YOTTA_SKILLS_NO_FALLBACK` | 设为 `1` 时禁用「默认源 404 → 官方源重试」的自动回退 |
 | `YOTTA_SKILLS_PYTHON` | 指定 python 可执行文件（元信 scan 用，同 `--python`） |
 | `YOTTA_SKILLS_VERIFY` | 指定 yotta_verify.py 路径（同 `--verify`） |
 | `YOTTA_SKILLS_MANIFEST` | 指定技能清单 JSON 路径（默认随包 skills.json） |
 
 ## 常见问题
 
-- **npmmirror 全新包 404**：镜像同步有延迟，通过 `YOTTA_SKILLS_NPM_FLAGS` 追加
-  `--registry=https://registry.npmjs.org/`（国内需代理）或等待镜像缓存后重试。
+- **npmmirror 全新包 404**：默认源返回 404 时安装器会**自动**改用官方源
+  `https://registry.npmjs.org/` 重试一次（输出显示回退行，安装证据记 `npm_registry_fallback`）；
+  若已显式指定 registry 或设置 `YOTTA_SKILLS_NO_FALLBACK=1`，则保持在指定源上，失败时给出可复制的修复提示。
 - **未收录智能体**：`--agent <name>` 报未收录时，改用 `--dir` 指到它的技能目录。
 - **Windows 下 npm 报错**：CLI 已内置 npm-cli.js 解析，无需额外处理；如需覆盖用 `--npm`。
 - **某技能安装失败**：汇总报告会列出失败原因，可单装该技能排查。

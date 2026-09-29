@@ -108,8 +108,8 @@ npx -y @yottameta/yotta-skills rollback --slug yotta-memory --agent codex
 
 ## 10. 常见问题
 
-- **npmmirror 全新包 404**：镜像同步有延迟。设置环境变量 `YOTTA_SKILLS_NPM_FLAGS` 为
-  `--registry=https://registry.npmjs.org/`（国内需代理）再执行，或等待镜像缓存后重试。
+- **npmmirror 全新包 404**：镜像同步有延迟时安装器会自动改用官方源重试一次（默认行为）；
+  如需固定在指定源，设置 `YOTTA_SKILLS_NPM_FLAGS=--registry=...` 或 `YOTTA_SKILLS_NO_FALLBACK=1`。
 - **`--agent` 报未收录**：改用 `--dir` 指到该智能体的技能目录（`.agents/skills` 不是
   通用目录）。
 - **某技能安装失败**：汇总报告给出失败原因；可单装该技能排查：

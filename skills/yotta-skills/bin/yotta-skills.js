@@ -36,10 +36,11 @@ const snapshotLib = require('../lib/install-snapshot');
 const updateCheckLib = require('../lib/update-check');
 const hookAdapterLib = require('../lib/hook-adapter');
 const scanPolicyLib = require('../lib/scan-policy');
+const npmPackLib = require('../lib/npm-pack');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.20.1';
+let VERSION = '0.20.2';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -617,31 +618,14 @@ function scanTarget(engine, skillDir, context) {
 }
 
 // ── 安装 ───────────────────────────────────────────────────────────────────
+const runNpmPackBase = npmPackLib.createPackRunner({ spawnSync, specOf, resolveNpm });
+
 function runNpmPack(skill, opts, packDir) {
-  const spec = specOf(skill, opts.pin);
-  const args = ['pack', spec, '--pack-destination', packDir];
-  const flags = (process.env.YOTTA_SKILLS_NPM_FLAGS || '').trim();
-  if (flags) args.push(...flags.split(/\s+/));
-  const npm = resolveNpm(opts);
-  const r = spawnSync(npm.bin, [...npm.prefix, ...args], { encoding: 'utf8', timeout: 180000, maxBuffer: 64 * 1024 * 1024, shell: npm.shell });
-  if (r.status !== 0) {
-    const raw = (r.stderr || r.stdout || 'npm pack 失败').trim();
-    const ll = raw.split(/\r?\n/).filter(Boolean);
-    const brief = ll.slice(-4).join(' | ');
-    return { error: brief || 'npm pack 失败', detail: raw };
+  const packed = runNpmPackBase(skill, opts, packDir);
+  if (packed.registryFallback) {
+    out('  ↳ npm 默认源 404，已用官方源重试成功（' + npmPackLib.OFFICIAL_REGISTRY + '）');
   }
-  const lines = (r.stdout || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  let tarball = null;
-  for (const l of lines) if (/\.tgz$/.test(l)) tarball = l;
-  if (!tarball) {
-    try {
-      const found = fs.readdirSync(packDir).filter(f => f.endsWith('.tgz'));
-      if (found.length === 1) tarball = found[0];
-    } catch (_) { /* ignore */ }
-  }
-  if (!tarball) return { error: '未找到 npm pack 产物（' + spec + '）' };
-  const vm = String(tarball).match(/-([0-9]+\.[0-9]+\.[0-9]+)\.tgz$/);
-  return { tarball: path.join(packDir, tarball), resolved: vm ? vm[1] : null, spec };
+  return packed;
 }
 
 function extractTarball(tarball, extractDir) {

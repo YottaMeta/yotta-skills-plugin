@@ -8,7 +8,8 @@
 对每个待装技能：
 
 1. 读清单（`skills.json`，默认随包；`YOTTA_SKILLS_MANIFEST` 可覆盖）；
-2. `npm pack <pkg>@<spec> --pack-destination <临时目录>`；
+2. `npm pack <pkg>@<spec> --pack-destination <临时目录>`（默认源返回 404 时自动改用官方源重试一次，
+   证据记 `npm_registry_fallback`）；
 3. 系统 `tar -xzf` 解压到临时目录（产物应有 `SKILL.md`）；
 4. 读取包内 `skill-manifest.json`；没有 manifest 时使用 `skills.json` 的家族默认契约；
 5. 校验 slug / package / version / 权限 / 生命周期脚本路径；

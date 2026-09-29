@@ -338,6 +338,7 @@ function createInstaller(deps) {
           verdict: scan.verdict,
           decision: scan.decision,
           scan_policy: scan.policy || null,
+          npm_registry_fallback: Boolean(packed.registryFallback),
           snapshot,
         });
       } catch (error) {
