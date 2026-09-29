@@ -48,11 +48,17 @@ function parseScanOutput(stdout) {
   try {
     const value = JSON.parse(String(stdout || ''));
     if (!value || typeof value.verdict !== 'string') {
-      return { ok: false, verdict: null, counts: null, error: '扫描输出缺少 verdict' };
+      return { ok: false, verdict: null, counts: null, findings: null, error: '扫描输出缺少 verdict' };
     }
-    return { ok: true, verdict: value.verdict, counts: value.counts || {}, error: null };
+    return {
+      ok: true,
+      verdict: value.verdict,
+      counts: value.counts || {},
+      findings: Array.isArray(value.findings) ? value.findings : null,
+      error: null,
+    };
   } catch (error) {
-    return { ok: false, verdict: null, counts: null, error: error.message };
+    return { ok: false, verdict: null, counts: null, findings: null, error: error.message };
   }
 }
 
@@ -62,22 +68,70 @@ function evaluateVerdict(verdict) {
   return { decision: 'block', block: true, warn: true };
 }
 
-function runVerifier(engine, target, options) {
-  const result = options.spawnSync(options.python, ['-B', engine, 'scan', target, '--json'], {
+function runScanOnce(engine, target, options) {
+  return options.spawnSync(options.python, ['-B', engine, 'scan', target, '--json'], {
     encoding: 'utf8',
     timeout: 60000,
+    maxBuffer: 32 * 1024 * 1024,
   });
+}
+
+function stderrBrief(result) {
+  const text = String((result && result.stderr) || '').trim();
+  if (!text) return '';
+  return text.split(/\r?\n/).filter(Boolean).slice(-2).join(' | ').slice(0, 300);
+}
+
+/**
+ * 元信扫描是只读幂等操作：解析失败（空输出 / 截断 / 进程异常）时重试一次，
+ * 避免偶发的子进程抖动把安装判死；两次都失败才按阻断处理。
+ */
+function runVerifier(engine, target, options) {
+  const opts = options || {};
+  const retries = opts.retries === undefined ? 1 : Math.max(0, Number(opts.retries) || 0);
+  let result = null;
+  let parsed = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    result = runScanOnce(engine, target, opts);
+    if (!result || result.error || result.status === null) {
+      parsed = null;
+      continue;
+    }
+    parsed = parseScanOutput(result.stdout);
+    if (parsed.ok) break;
+  }
   if (result && result.error) {
-    return { ok: false, verdict: null, counts: null, error: result.error.message, exitCode: null };
+    return { ok: false, verdict: null, counts: null, findings: null, error: result.error.message, exitCode: null };
   }
   if (!result || result.status === null) {
-    return { ok: false, verdict: null, counts: null, error: '元信 scan 执行失败', exitCode: null };
+    return {
+      ok: false,
+      verdict: null,
+      counts: null,
+      findings: null,
+      error: '元信 scan 执行失败（超时或无法启动）',
+      exitCode: null,
+    };
   }
-  const parsed = parseScanOutput(result.stdout);
-  if (!parsed.ok) {
-    return { ok: false, verdict: null, counts: null, error: parsed.error, exitCode: result.status };
+  if (!parsed || !parsed.ok) {
+    const brief = stderrBrief(result);
+    return {
+      ok: false,
+      verdict: null,
+      counts: null,
+      findings: null,
+      error: '元信 scan 输出无法解析（exit ' + result.status + '）' + (brief ? ': ' + brief : ''),
+      exitCode: result.status,
+    };
   }
-  return { ok: true, verdict: parsed.verdict, counts: parsed.counts, error: null, exitCode: result.status };
+  return {
+    ok: true,
+    verdict: parsed.verdict,
+    counts: parsed.counts,
+    findings: parsed.findings,
+    error: null,
+    exitCode: result.status,
+  };
 }
 
 module.exports = {

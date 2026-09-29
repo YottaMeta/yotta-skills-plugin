@@ -148,7 +148,10 @@ function createInstaller(deps) {
           safeRecord({ event: 'before_install', skill: skill.slug, decision: 'block', error: gate.error });
           return { skill, status: 'fail', version: packed.resolved, note: gate.error, exitCode: 5 };
         }
-        const scanResult = deps.scanTarget(gate.engine, extracted.pkgDir);
+        const scanResult = deps.scanTarget(gate.engine, extracted.pkgDir, {
+          slug: skill.slug,
+          version: packed.resolved,
+        });
         if (!scanResult.ok) {
           safeRecord({ event: 'before_install', skill: skill.slug, decision: 'block', error: scanResult.error });
           return { skill, status: 'fail', version: packed.resolved, note: scanResult.error, exitCode: 5 };
@@ -193,6 +196,7 @@ function createInstaller(deps) {
             decision: 'block',
             verdict: scanResult.verdict,
             counts: scanResult.counts,
+            scan_policy: scanResult.policy || null,
             hook_decision: hookEvaluation.decision,
           });
           return {
@@ -208,6 +212,7 @@ function createInstaller(deps) {
           verdict: scanResult.verdict,
           counts: scanResult.counts,
           warn: verdict.warn,
+          policy: scanResult.policy || null,
         };
       }
 
@@ -332,6 +337,7 @@ function createInstaller(deps) {
           bootstrap_scan: gate.mode === 'trusted-bootstrap' && skill.slug === 'yotta-verify' ? 'self' : null,
           verdict: scan.verdict,
           decision: scan.decision,
+          scan_policy: scan.policy || null,
           snapshot,
         });
       } catch (error) {

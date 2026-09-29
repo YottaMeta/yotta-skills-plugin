@@ -85,6 +85,9 @@
   与 `bootstrap_scan=self`，随后用元信扫描其余家族包；
 - verdict 处置：`SAFE TO INSTALL` 继续；`INSTALL WITH CAUTION` / `REVIEW REQUIRED`
   继续但显示风险并留证；`DO NOT INSTALL` 和扫描失败阻断，不替换目标；
+- scanPolicy 复核：`DO NOT INSTALL` 时用包内 `scan-policy.json` 的已审查例外复核（逐条绑定
+  skill + version + treeHash + 规则 + 路径；缺失 / 不匹配一律 fail-closed）；豁免后无阻断级
+  发现则继续，显示 `↳ scanPolicy 复核：豁免 N 条已审查发现` 并把 `scan_policy` 写进安装证据；
 - `--skip-scan` 只保留为人工应急路径，使用时输出 `explicit-unverified` 并写入证据；
 - `update --auto` 始终执行装前门禁，不接受 `--skip-scan`。
 

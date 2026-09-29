@@ -35,10 +35,11 @@ const lifecycleLib = require('../lib/install-lifecycle');
 const snapshotLib = require('../lib/install-snapshot');
 const updateCheckLib = require('../lib/update-check');
 const hookAdapterLib = require('../lib/hook-adapter');
+const scanPolicyLib = require('../lib/scan-policy');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.20.0';
+let VERSION = '0.20.1';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -586,22 +587,33 @@ function runScan(engine, skillDir) {
   return gateLib.runVerifier(engine, skillDir, { python, spawnSync });
 }
 
-function scanTarget(engine, skillDir) {
+function scanTarget(engine, skillDir, context) {
   const scan = runScan(engine, skillDir);
-  if (scan.ok) {
-    const counts = scan.counts || {};
-    const line = 'critical ' + (counts.critical || 0) + ' / high ' + (counts.high || 0) +
-      ' / medium ' + (counts.medium || 0) + ' / low ' + (counts.low || 0) +
-      ' / info ' + (counts.info || 0);
-    out('  元信 scan: ' + scan.verdict + '（' + line + '）');
-    if (scan.verdict === gateLib.BLOCK) out('  ⚠ 元信 verdict 为 DO NOT INSTALL，已阻断安装。');
-    else if (scan.verdict === gateLib.CAUTION || scan.verdict === gateLib.REVIEW) {
-      out('  ⚠ 元信 verdict 为 ' + scan.verdict + '，继续安装并保留风险证据。');
-    }
-  } else {
+  if (!scan.ok) {
     out('  元信 scan: ' + scan.error);
+    return scan;
   }
-  return scan;
+  const ctx = context || {};
+  const reviewed = scanPolicyLib.applyScanPolicy(scan, {
+    slug: ctx.slug,
+    version: ctx.version,
+    pkgDir: skillDir,
+    policy: scanPolicyLib.loadPolicy(path.join(PKG_ROOT, 'scan-policy.json')),
+  });
+  const counts = scan.counts || {};
+  const line = 'critical ' + (counts.critical || 0) + ' / high ' + (counts.high || 0) +
+    ' / medium ' + (counts.medium || 0) + ' / low ' + (counts.low || 0) +
+    ' / info ' + (counts.info || 0);
+  out('  元信 scan: ' + scan.verdict + '（' + line + '）');
+  if (reviewed.policy && reviewed.policy.applied && reviewed.policy.excluded > 0) {
+    out('  ↳ scanPolicy 复核：豁免 ' + reviewed.policy.excluded +
+      ' 条已审查发现（检测规则 / 文档说明，treeHash 绑定）→ ' + reviewed.verdict);
+  }
+  if (reviewed.verdict === gateLib.BLOCK) out('  ⚠ 元信 verdict 为 DO NOT INSTALL，已阻断安装。');
+  else if (reviewed.verdict === gateLib.CAUTION || reviewed.verdict === gateLib.REVIEW) {
+    out('  ⚠ 元信 verdict 为 ' + reviewed.verdict + '，继续安装并保留风险证据。');
+  }
+  return reviewed;
 }
 
 // ── 安装 ───────────────────────────────────────────────────────────────────
