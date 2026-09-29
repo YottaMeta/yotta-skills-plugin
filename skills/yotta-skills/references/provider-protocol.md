@@ -1,7 +1,9 @@
-# 扩展提供方协议 v1（元阁 · capability `o1.route`）
+# 扩展提供方协议 v1（元阁 · capability `o1.route` / `m1.adjudicate`）
 
-元阁可以可选地调用一个由用户显式配置的**本地扩展提供方（provider）**，由它在已装技能白名单内
-对静态路由结果做增补 / 重排。未配置提供方时，`--route` 的行为与输出与之前完全一致。
+元阁可以可选地调用一个由用户显式配置的**本地扩展提供方（provider）**：
+
+- `o1.route`：在已装技能白名单内对静态路由结果做增补 / 重排；未配置时 `--route` 行为与输出与之前完全一致。
+- `m1.adjudicate`：对已装技能做 M1 记忆裁决，返回 `promote / hold / demote` 只读建议；未配置时 `decide-memory` 返回 `not_installed`，不写任何文件。
 
 ## 1. 配置
 
@@ -99,3 +101,105 @@ CLI 文本输出只在状态非 `not_installed` 时多一行「动态路由: ...
 - 元阁不替 provider 联网；provider 自身行为由它自己的包声明。
 - 删除 `provider.json` 即回到纯静态路由，无残留依赖。
 - provider 输出只当数据使用：白名单外的 slug、非法结构一律丢弃，不作为指令执行。
+
+## 6. capability `m1.adjudicate`
+
+### 6.1 触发
+
+只在用户显式执行 `yotta-skills decide-memory`（CLI）或 MCP `decide_memory` 时触发。
+安装 / 更新 / 盘点 / re-index / doctor 等路径不执行 M1 provider。
+
+### 6.2 请求
+
+元阁先把注册表与本地使用记录转成确定性特征快照，再发给 provider：
+
+```json
+{
+  "schema": 1,
+  "capability": "m1.adjudicate",
+  "request_id": "<uuid>",
+  "payload": {
+    "schema": 1,
+    "generated_at": "2026-09-30T00:00:00Z",
+    "skills": [
+      {
+        "slug": "yotta-memory",
+        "version": "0.19.0",
+        "status": "known",
+        "description": "文件式智能体记忆...",
+        "first_seen": "2026-08-23T00:00:00Z",
+        "last_seen": "2026-09-30T00:00:00Z",
+        "last_signal_at": "2026-09-30T00:00:00Z",
+        "pinned": false,
+        "signals": {
+          "used": 2,
+          "named": 0,
+          "accepted": 1,
+          "route_hits": 5,
+          "distinct_pairs": 3
+        }
+      }
+    ]
+  }
+}
+```
+
+payload 不含需求原文、记忆正文、凭据、主机名、用户名、来源目录或任意文件路径。
+
+### 6.3 响应
+
+```json
+{
+  "ok": true,
+  "capability": "m1.adjudicate",
+  "data": {
+    "policy": {
+      "version": "m1-mvp-1",
+      "promote_threshold": 60,
+      "hold_threshold": 30,
+      "cooling_days": 7
+    },
+    "decisions": [
+      {
+        "slug": "yotta-memory",
+        "verdict": "promote",
+        "score": 78,
+        "reasons": ["used x2：+24", "组合出现 x3：+9"],
+        "signals": {
+          "used": 2,
+          "named": 0,
+          "accepted": 1,
+          "route_hits": 5,
+          "distinct_pairs": 3,
+          "description_quality": 12,
+          "recency": 10
+        }
+      }
+    ]
+  }
+}
+```
+
+元阁只接受：slug 在本次注册表白名单内、verdict 为 `promote / hold / demote`、score 为 0-100。
+未知 slug / 非法 verdict / 非法 score 一律丢弃并记入 `dropped`。
+
+### 6.4 授权与回落
+
+| 状态 | 触发 | 元阁行为 |
+| --- | --- | --- |
+| `not_installed` | 无配置 / 无匹配 capability | `decide-memory` 返回 `not_installed`，不写文件 |
+| `active` | provider 返回合法 decisions | 展示建议；`--promote` 可写本地建议文件 |
+| `license_required` | provider 明确返回该 code | 显示需授权；不阻断其他能力 |
+| `timeout` / `invalid_output` / `error` | 超时 / 非法 JSON / 执行失败 | 显示状态；不写文件、不阻断 |
+
+provider 内部应使用路线 B 授权门（capability `m1.adjudicate`）。未授权时返回：
+
+```json
+{ "ok": false, "code": "license_required", "message": "该能力需要授权后使用" }
+```
+
+### 6.5 建议文件与元忆边界
+
+`--promote` 只写 `~/.yottaskills/memory-adjudication.json`，包含 decisions 与 `memory_candidates`。
+`memory_candidates` 默认使用私密 `PREF`，不自动写元忆；用户或 AI 需要再显式调用元忆写入。
+MCP `decide_memory` 始终只读，不写建议文件、不写元忆。

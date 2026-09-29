@@ -37,10 +37,12 @@ const updateCheckLib = require('../lib/update-check');
 const hookAdapterLib = require('../lib/hook-adapter');
 const scanPolicyLib = require('../lib/scan-policy');
 const npmPackLib = require('../lib/npm-pack');
+const usageJournalLib = require('../lib/usage-journal');
+const m1FeaturesLib = require('../lib/m1-features');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.20.2';
+let VERSION = '0.21.0';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -153,6 +155,7 @@ function parseArgs(argv) {
     inventory: false, reindex: false, noReindex: false, json: false, project: false, route: null,
     check: false, auto: false, scheduled: false, registry: null, slug: null,
     host: null, event: null, manifest: null, context: null,
+    signal: null, yes: false, explain: false, promote: false,
   };
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
@@ -197,12 +200,18 @@ function parseArgs(argv) {
     else if (a === '--event') opts.event = take('--event').toLowerCase();
     else if (a === '--manifest') opts.manifest = take('--manifest');
     else if (a === '--context') opts.context = take('--context');
+    else if (a === '--skill') opts.skill = take('--skill').toLowerCase();
+    else if (a === '--signal') opts.signal = take('--signal').toLowerCase();
+    else if (a === '--yes') opts.yes = true;
+    else if (a === '--explain') opts.explain = true;
+    else if (a === '--promote') opts.promote = true;
     else if (a.startsWith('-')) die('未知参数: ' + a, 2, '可用 --help 查看支持的选项。');
     else positionals.push(a);
   }
   // 命令解析：install / update / doctor / rollback，其余位置参数 = 技能 slug（可多个）
   for (const p of positionals) {
-    if (p === 'install' || p === 'update' || p === 'doctor' || p === 'rollback' || p === 'hook') {
+    if (p === 'install' || p === 'update' || p === 'doctor' || p === 'rollback' || p === 'hook'
+      || p === 'usage' || p === 'decide-memory') {
       if (opts.command && opts.command !== p) die('命令冲突：' + opts.command + ' 与 ' + p);
       opts.command = p;
     } else {
@@ -1101,6 +1110,9 @@ function printHelp() {
   out('  yotta-skills --inventory            盘点本机已装技能（自研扫描，不依赖任何元技能）');
   out('  yotta-skills --reindex              重扫注册表（手动触发；install / update 完成后 CLI 自动重扫）');
   out('  yotta-skills --route "<需求摘要>"   给出场景组合、调用顺序、缺失技能安装建议');
+  out('  yotta-skills usage status            查看本地使用记录开关与计数');
+  out('  yotta-skills usage enable|disable    开启 / 关闭 --route 的结构化使用记录');
+  out('  yotta-skills usage mark --skill <slug> --signal used|named|accepted');
   out('  yotta-skills hook capabilities       查看宿主六事件能力矩阵');
   out('  yotta-skills hook evaluate --event <event> --manifest <file>  评估 hook 声明并留证');
   out('  yotta-skills hook bind --manifest <file>  注册 hook 声明（幂等）');
@@ -1127,6 +1139,11 @@ function printHelp() {
   out('  --event <event>   hook 六事件之一（before_start / before_tool / before_install / before_publish / after_milestone / before_send）');
   out('  --manifest <file> hook evaluate / bind 使用的 skill-manifest.json 路径');
   out('  --context <json>  hook evaluate 的检查结果 JSON（checks / wrapperRegistered / evidence）');
+  out('  --skill <slug>    usage mark 的技能 slug');
+  out('  --signal <name>   usage mark 的信号：used / named / accepted');
+  out('  --yes             usage reset 确认清空');
+  out('  --explain         decide-memory 文本报告追加信号明细');
+  out('  --promote         decide-memory 只写本地建议文件（不写元忆）');
   out('  --project         inventory / reindex 时附加扫描当前项目 .agents/skills / .codex/skills');
   out('  --no-reindex      安装 / 更新后不自动重扫注册表');
   out('  -h, --help       帮助');
@@ -1302,6 +1319,15 @@ function runRoute(opts) {
   const yottaSlugs = new Set([...defaultYottaSlugs(), ...MANIFEST.map((s) => s.slug)]);
   const result = routeRequest(opts.route, { registry, yottaSlugs });
   result.dynamic = applyDynamicRoute(result, registry, opts);
+  try {
+    usageJournalLib.recordRoute({
+      playbook: result.playbook.id,
+      confidence: result.confidence,
+      skills: result.skills.map((skill) => skill.slug),
+    });
+  } catch (_) {
+    // 使用记录失败不阻断路由
+  }
   if (opts.json) {
     out(JSON.stringify(result, null, 2));
     return;
@@ -1345,6 +1371,184 @@ function runRoute(opts) {
   out('');
   out('应用模式: 显式调用（可经用户确认后切换为按场景自动调用）');
   out('说明: ' + result.disclaimer);
+}
+
+function runUsage(opts) {
+  const action = opts.rest[0] || 'status';
+  if (action === 'status') {
+    const state = usageJournalLib.readUsage();
+    if (opts.json) {
+      out(JSON.stringify(state, null, 2));
+      return;
+    }
+    out('元阁本地使用记录：' + (state.enabled ? '已开启' : '已关闭'));
+    out('文件: ' + usageJournalLib.usageFilePath());
+    const skills = Object.keys(state.skills || {}).sort();
+    if (!skills.length) {
+      out('暂无记录。');
+      return;
+    }
+    for (const slug of skills) {
+      const item = state.skills[slug];
+      out('  ' + slug + '  used=' + item.used + ' named=' + item.named
+        + ' accepted=' + item.accepted + ' route_hits=' + item.route_hits
+        + ' pairs=' + Object.keys(item.pairs || {}).length);
+    }
+    return;
+  }
+  if (action === 'enable' || action === 'disable') {
+    const state = usageJournalLib.setEnabled(action === 'enable');
+    if (opts.json) {
+      out(JSON.stringify(state, null, 2));
+      return;
+    }
+    out('元阁本地使用记录已' + (state.enabled ? '开启' : '关闭') + '。');
+    out('文件: ' + usageJournalLib.usageFilePath());
+    return;
+  }
+  if (action === 'mark') {
+    if (!opts.skill) die('usage mark 缺少 --skill', 2, '例如 --skill yotta-memory。');
+    if (!opts.signal) die('usage mark 缺少 --signal', 2, '可用 used / named / accepted。');
+    let state;
+    try {
+      state = usageJournalLib.markUsage(opts.skill, opts.signal);
+    } catch (error) {
+      die(error.message, 2, '请检查 --skill 与 --signal。');
+    }
+    if (opts.json) {
+      out(JSON.stringify(state, null, 2));
+      return;
+    }
+    out('已记录：' + opts.skill + ' / ' + opts.signal);
+    return;
+  }
+  if (action === 'reset') {
+    if (!opts.yes) die('usage reset 需要 --yes 确认', 2, '该操作会清空本地使用记录。');
+    const file = usageJournalLib.resetUsage();
+    if (opts.json) {
+      out(JSON.stringify({ reset: true, file }, null, 2));
+      return;
+    }
+    out('已清空本地使用记录：' + file);
+    return;
+  }
+  die('未知 usage 子命令: ' + action, 2, '支持 status / enable / disable / mark / reset。');
+}
+
+function m1StatusText(block) {
+  if (!block) return '';
+  if (block.status === 'active') {
+    return '已应用（提供方 ' + (block.provider_id || '-') + '；建议 '
+      + block.decisions.length + ' 条）';
+  }
+  if (block.status === 'license_required') return '需授权（该能力需要授权后使用）';
+  if (block.status === 'timeout') return '未生效（提供方超时）';
+  if (block.status === 'invalid_output') return '未生效（提供方输出无效）';
+  if (block.status === 'error') return '未生效（提供方异常）';
+  return block.status;
+}
+
+function runDecideMemory(opts) {
+  if (opts.dryRun && opts.promote) {
+    die('--dry-run 与 --promote 不能同时使用', 2, '默认就是只读；需要写建议文件时只加 --promote。');
+  }
+  const { registry } = reindexRegistry(opts);
+  const usage = usageJournalLib.readUsage();
+  const snapshot = m1FeaturesLib.buildFeatureSnapshot(registry, usage);
+  const provider = require('../lib/provider');
+  let run;
+  try {
+    run = provider.runCapability('m1.adjudicate', snapshot);
+  } catch (error) {
+    run = { status: 'error', provider_id: '', note: 'M1 装载失败：' + error.message };
+  }
+  const block = {
+    status: run.status || 'error',
+    provider_id: run.provider_id || '',
+    applied: false,
+    mode: opts.promote ? 'recommendation' : 'dry-run',
+    decisions: [],
+    summary: { promote: 0, hold: 0, demote: 0 },
+    dropped: [],
+    note: run.note || run.message || '',
+  };
+  if (run.status === 'active' && run.data && typeof run.data === 'object') {
+    const allowed = new Set(Object.keys(registry.skills || {}));
+    const verdicts = new Set(['promote', 'hold', 'demote']);
+    const requested = Array.isArray(run.data.decisions) ? run.data.decisions : [];
+    for (const raw of requested) {
+      const slug = raw && typeof raw === 'object' ? String(raw.slug || '') : '';
+      const score = raw && Number(raw.score);
+      const verdict = raw && String(raw.verdict || '');
+      if (!slug || !allowed.has(slug) || !verdicts.has(verdict) || !Number.isFinite(score) || score < 0 || score > 100) {
+        if (slug) block.dropped.push(slug);
+        continue;
+      }
+      const reasons = Array.isArray(raw.reasons)
+        ? raw.reasons.filter((item) => typeof item === 'string').slice(0, 20)
+        : [];
+      block.decisions.push({
+        slug,
+        verdict,
+        score: Math.round(score),
+        reasons,
+        signals: raw.signals && typeof raw.signals === 'object' && !Array.isArray(raw.signals)
+          ? raw.signals
+          : {},
+      });
+    }
+    block.decisions.sort((left, right) => right.score - left.score || left.slug.localeCompare(right.slug));
+    for (const decision of block.decisions) {
+      if (block.summary[decision.verdict] !== undefined) block.summary[decision.verdict] += 1;
+    }
+    block.applied = block.decisions.length > 0;
+  }
+
+  let reportFile = null;
+  if (opts.promote && block.status === 'active') {
+    const report = {
+      schema: 1,
+      generated_at: snapshot.generated_at,
+      provider_id: block.provider_id,
+      mode: 'recommendation',
+      decisions: block.decisions,
+      memory_candidates: m1FeaturesLib.buildMemoryCandidates(block.decisions, registry),
+      note: '只写本地建议文件；不写元忆、不删除任何内容。',
+    };
+    try {
+      reportFile = m1FeaturesLib.writeAdjudication(report);
+      block.report_file = reportFile;
+    } catch (error) {
+      die('M1 建议文件写入失败: ' + error.message, 1, '请检查 ~/.yottaskills 目录权限。');
+    }
+  }
+
+  if (opts.json) {
+    out(JSON.stringify({ schema: 1, generated_at: snapshot.generated_at, m1: block }, null, 2));
+    return;
+  }
+  out('元阁记忆裁决（M1）');
+  out('状态: ' + m1StatusText(block));
+  if (block.status === 'active') {
+    out('建议汇总: promote ' + block.summary.promote + ' / hold ' + block.summary.hold
+      + ' / demote ' + block.summary.demote + '；丢弃 ' + block.dropped.length);
+    for (const decision of block.decisions) {
+      out('  [' + decision.verdict + '] ' + decision.slug + '  ' + decision.score
+        + (decision.reasons.length ? '  - ' + decision.reasons.join('；') : ''));
+      if (opts.explain) {
+        const signals = decision.signals || {};
+        out('    信号: used=' + (signals.used || 0) + ' named=' + (signals.named || 0)
+          + ' accepted=' + (signals.accepted || 0) + ' route_hits=' + (signals.route_hits || 0)
+          + ' distinct_pairs=' + (signals.distinct_pairs || 0)
+          + ' description_quality=' + (signals.description_quality || 0)
+          + ' recency=' + (signals.recency || 0));
+      }
+    }
+    if (reportFile) out('建议文件: ' + reportFile);
+  } else if (block.note) {
+    out('说明: ' + block.note);
+  }
+  out('边界: 只建议不删除；不自动写元忆；数据不出本机。');
 }
 
 /** 装技能后自动 re-index（--no-reindex 关闭）：把本次落位结果反映进注册表。best-effort：失败不阻断安装。 */
@@ -1465,6 +1669,14 @@ function main() {
   if (opts.route && !opts.command) { runRoute(opts); return; }
 
   const command = opts.command || 'install';
+  if (command === 'usage') {
+    runUsage(opts);
+    return;
+  }
+  if (command === 'decide-memory') {
+    runDecideMemory(opts);
+    return;
+  }
   if (command === 'hook') {
     runHook(opts);
     return;

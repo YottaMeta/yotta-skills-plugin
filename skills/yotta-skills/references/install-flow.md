@@ -109,6 +109,13 @@
 - 评估证据写入 `~/.yottaskills/hook-log.jsonl`，绑定记录写入 `~/.yottaskills/hook-bindings.json`。
 - `native-audit` 不等于强制；缺少能力或证据时必须显示 `explicit-unverified`。
 
+## M1 记忆裁决
+
+- `decide-memory` 默认只读，调用可选本地 provider（capability `m1.adjudicate`）输出 `promote / hold / demote` 建议。
+- `--promote` 只写 `~/.yottaskills/memory-adjudication.json` 建议文件；不写元忆、不删除技能。
+- `usage` 默认关闭；显式 `usage enable` 后才记录结构化使用信号，不记录需求原文。
+- 未配置 / 未授权 / 超时 / 非法输出时 fail-open，退出码保持 0。
+
 ## 快照与回滚
 
 - 旧版本快照：`~/.yottaskills/snapshots/<slug>/<timestamp>-<version>-<随机后缀>/`；

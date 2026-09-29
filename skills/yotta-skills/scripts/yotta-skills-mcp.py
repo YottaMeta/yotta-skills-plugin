@@ -7,6 +7,7 @@ stdio MCP server（JSON-RPC 2.0，换行分隔），把元阁技能扫描核心�
   describe_skill         查看单个技能详情（slug / 版本 / 功能 / 来源）
   reindex                强制重新扫描并更新注册表
   route_request          按需求摘要给出静态编排路由建议
+  decide_memory          M1 记忆裁决只读建议（不写元忆、不删除）
 
 自包含原则：扫描由元阁自带核心（bin/yotta-skills.js --inventory / --reindex）完成，
 不依赖任何元技能；数据只写本机注册表，默认 ~/.yottaskills/registry.json，
@@ -26,7 +27,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "0.20.2"
+VERSION = "0.21.0"
 TOOL_NAME = "yotta-skills"
 CN_NAME = "元阁"
 MCP_PROTOCOL_MODERN = "2026-07-28"
@@ -163,11 +164,24 @@ def _tool_route(arguments):
             "isError": False}
 
 
+def _tool_decide_memory(arguments):
+    if arguments.get("dry_run") is False:
+        return _tool_error("decide_memory 只读：MCP 不写建议文件，也不写元忆")
+    stdout = _run_cli(["decide-memory", "--json"])
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError as e:
+        return _tool_error("decide_memory 输出解析失败：%s" % e)
+    return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}],
+            "isError": False}
+
+
 TOOL_HANDLERS = {
     "list_installed_skills": _tool_list,
     "describe_skill": _tool_describe,
     "reindex": _tool_reindex,
     "route_request": _tool_route,
+    "decide_memory": _tool_decide_memory,
 }
 
 
@@ -200,6 +214,16 @@ def mcp_tools():
             "只建议安装，不自动安装；数据不出本机。",
             {"request": {"type": "string", "description": "用户需求摘要"}},
             ["request"],
+        ),
+        _tool_spec(
+            "decide_memory",
+            "M1 记忆裁决只读建议：返回技能评分、promote / hold / demote 建议与信号明细。"
+            "只读，不写元忆、不删除技能、不写建议文件；需要写建议文件时使用 CLI --promote。数据不出本机。",
+            {
+                "dry_run": {"type": "boolean", "description": "固定为 true；MCP 只读"},
+                "explain": {"type": "boolean", "description": "是否要求解释信号明细（JSON 始终含 signals）"},
+            },
+            [],
         ),
     ]
 
@@ -261,7 +285,7 @@ def handle_message(msg):
                 "result": _modern_ok({
                     "supportedVersions": [MCP_PROTOCOL_MODERN],
                     "capabilities": {"tools": {}},
-                    "instructions": "元阁 MCP（基于 MCP 最新协议 2026-07-28，向后兼容 2025-11-25 及更早握手）：本机技能盘点与静态编排路由 list_installed_skills/describe_skill/reindex/route_request；数据不出本机。",
+                    "instructions": "元阁 MCP（基于 MCP 最新协议 2026-07-28，向后兼容 2025-11-25 及更早握手）：本机技能盘点、静态编排路由与 M1 记忆裁决只读建议 list_installed_skills/describe_skill/reindex/route_request/decide_memory；数据不出本机。",
                 }, (3600000, "public")),
             }
         if method == "tools/list":

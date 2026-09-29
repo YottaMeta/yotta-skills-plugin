@@ -113,3 +113,15 @@ npx -y @yottameta/yotta-skills install <slug> --dir /path/to/skills
 不会。元阁只给建议：`--route` 输出缺失技能与安装命令，安装动作由你执行或确认后才发生；
 写客户端 `mcpServers` 配置、把编排护栏写进全局记忆（如 `AGENTS.md` / `CLAUDE.md`）都需要**事先明确同意**，
 并会先展示目标文件与完整文本。你拒绝写入时，元阁不写任何文件，直接以 CLI 方式继续工作。
+
+## 15. `decide-memory` 会替我删除技能或写记忆吗？
+
+不会。`decide-memory` 默认只读，输出 `promote / hold / demote` 建议、分数与信号明细；
+`--promote` 只写本地 `~/.yottaskills/memory-adjudication.json` 建议文件，并生成私密 `PREF` 记忆候选。
+元忆写入由你或 AI 再显式调用元忆完成；技能本体与记忆都不会被自动删除。
+
+## 16. `usage` 会记录我的需求原文吗？
+
+不会。使用记录默认关闭；执行 `usage enable` 后才记录 `--route` 的结构化 route_hits 与组合对。
+记录只含技能 slug、时间、信号类型、playbook / confidence 与组合对，不含需求原文、记忆正文、路径或身份信息。
+`usage disable` 停止记录，`usage reset --yes` 清空记录。

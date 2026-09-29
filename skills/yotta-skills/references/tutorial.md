@@ -152,6 +152,27 @@ npx -y @yottameta/yotta-skills --route "检查代码质量，别糊弄"
 - `--json` 输出机器可读结果（含新增 / 更新 / 消失），适合脚本与钩子。
 - 如果本机还装了非元阁家族技能，`--route` 会额外列出「其他已装技能候选」：只按 frontmatter description 与需求文本做本地机械匹配，标注来源、得分、命中词项与扫描状态（默认未扫描），不读取全文指令、不自动调用；使用/安装前请先做装前安全扫描。
 
+## M1 记忆裁决（decide-memory）
+
+当你想判断「哪些已装技能值得长期记住」，可以运行：
+
+```bash
+npx -y @yottameta/yotta-skills decide-memory --explain
+npx -y @yottameta/yotta-skills decide-memory --promote --json
+```
+
+`decide-memory` 默认只读，输出每个技能的 `promote / hold / demote` 建议、分数与信号明细；
+`--promote` 只写 `~/.yottaskills/memory-adjudication.json` 建议文件，不写元忆、不删除内容。
+评分由用户显式配置的本地 provider（capability `m1.adjudicate`）完成；未配置 / 未授权 / 超时 / 非法输出时只返回状态，不阻断其他能力。
+
+使用记录默认关闭，只有显式开启后才记录结构化信号：
+
+```bash
+npx -y @yottameta/yotta-skills usage status
+npx -y @yottameta/yotta-skills usage enable
+npx -y @yottameta/yotta-skills usage mark --skill yotta-memory --signal used
+```
+
 ## 运行时 hook 适配（hook）
 
 技能 manifest 只声明六个统一事件的要求；元阁负责能力探测、确定性评估、证据留痕和降级标注：
