@@ -1,6 +1,6 @@
 ---
 name: yotta-skills
-version: 0.22.1
+version: 0.22.2
 description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点 + 运行时 hook 适配。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；M1 记忆裁决层：usage enable/mark 本地结构化记录 + decide-memory / MCP decide_memory 输出 promote / hold / demote 只读建议（需授权 provider；只建议不删除、不自动写元忆）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么组合使用（安装与调用均由用户确认后执行）」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录（默认 --pin 锁死清单精确版本）；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工只建议跑本地 --reindex；更新检查走手动 --check 或后台 --check --scheduled）；运行时适配层：hook capabilities / evaluate / bind / unbind 按宿主能力矩阵执行六个统一事件并留证降级，元信 before_install 已接入安装管线；自包含零依赖，不依赖任何元技能；MCP 按需加载且需用户确认后写入配置（可选：list_installed_skills/describe_skill/reindex/route_request/decide_memory，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / usage 使用记录 / decide-memory 记忆裁决 / install / update / update --check（只读检查）/ update --check --scheduled（后台周检）/ update --auto（家族自动更新）/ hook 适配 / --inventory / --reindex / --dry-run 预览 / --pin（默认）/ --range。触发：需要批量安装或更新元阁全家技能、按场景组合多个元技能、路由或判断该用哪些技能、判断哪些技能值得长期记忆、查看或记录技能使用信号、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、评估宿主 hook 能力、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/hook 适配/该用哪个技能/路由技能/记忆裁决/技能该不该记住/盘点技能/查看已装技能 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + M1 记忆裁决只读建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index + hook 适配」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能、不静默写宿主配置或全局记忆、不自动删除技能或记忆；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
 license: MIT
 metadata:
@@ -166,7 +166,7 @@ openclaw skills update @yottameta/yotta-skills
 | `update --check [--agent <name> \| --dir <path>]` | 只读检查更新：联网对 npm 最新，不改动；退出码 0=全部最新 / 3=有更新 / 1=查失败 |
 | `update --check --scheduled [--agent <name> \| --dir <path>]` | 后台周检入口：未到期不联网；到期只检查一次并写本地缓存；文本失败静默，`--json` 保留诊断；始终退出 0 |
 | `update --auto [--agent <name> \| --dir <path>]` | 检查到家族更新后自动更新（仅 yotta-* 自家家族，含装前安全扫描） |
-| `doctor [--agent <name> \| --dir <path>] [--slug <slug>]` | 只读自检：SKILL / 版本 / manifest / 注册表 / 自定义 doctor；`--json` 输出稳定字段 |
+| `doctor [--agent <name> \| --dir <path>] [--slug <slug>]` | 只读自检：SKILL / 版本 / manifest / 注册表 / 自定义 doctor；`--dir` 可指向技能集合目录或单个技能包目录；退出码 0=通过 / 4=没有可检查对象 / 1=检查失败 / 6=manifest 身份失败 |
 | `rollback [--agent <name> \| --dir <path>] [--slug <slug>]` | 校验并恢复最近一次快照；`--list` 只列快照；`--json` 输出机器可读结果 |
 | `hook capabilities --host <name>` | 查看宿主六个统一事件的能力等级；未知宿主默认 `unsupported` |
 | `hook evaluate --host <name> --event <event> --manifest <file> --context <json>` | 评估 manifest hook 声明，输出 allow / block / warn / unverified，并写结构化证据 |
@@ -262,7 +262,9 @@ npx -y @yottameta/yotta-skills update --auto --agent codex
 
 `doctor` 是只读自检，不会修改技能目录或注册表。它检查目标技能目录、`SKILL.md`、
 frontmatter 版本、manifest 身份、本地注册表记录，以及包内声明的自定义 doctor 脚本。
-`--json` 返回稳定字段，适合脚本和智能体消费。
+`--dir` 既可指向包含多个 `yotta-*` 子目录的技能集合目录，也可直接指向单个技能包目录；
+后者会按 `SKILL.md` / `skill-manifest.json` 自动识别技能身份。`--json` 返回稳定字段，
+适合脚本和智能体消费。退出码：`0` 通过，`4` 没有可检查对象，`1` 检查失败，`6` manifest 身份失败。
 
 ```bash
 npx -y @yottameta/yotta-skills doctor --agent codex --slug yotta-memory

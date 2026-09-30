@@ -42,7 +42,7 @@ const m1FeaturesLib = require('../lib/m1-features');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.22.1';
+let VERSION = '0.22.2';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -820,27 +820,62 @@ function runCustomDoctor(skillDir, dest) {
   });
 }
 
+function withDoctorTarget(skill, target) {
+  return Object.assign({}, skill, { target });
+}
+
+function selfDoctorTarget(dest) {
+  const meta = readInstalledMeta(dest);
+  const manifest = readInstalledManifest(dest);
+  const candidates = [
+    manifest && manifest.slug,
+    meta.name,
+    path.basename(dest),
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).trim().toLowerCase());
+
+  for (const slug of candidates) {
+    const skill = familySkillFor(slug);
+    if (skill) return withDoctorTarget(skill, dest);
+  }
+  return null;
+}
+
 function doctorTargets(opts, dest) {
+  const self = selfDoctorTarget(dest);
   if (opts.slug) {
+    if (self && self.slug === opts.slug) return [self];
     const skill = familySkillFor(opts.slug);
-    return skill ? [skill] : [];
+    return skill ? [withDoctorTarget(skill, path.join(dest, skill.slug))] : [];
   }
   if (opts.skills.length) {
-    return opts.skills.map((slug) => familySkillFor(slug)).filter(Boolean);
+    const targets = [];
+    for (const slug of opts.skills) {
+      if (self && self.slug === slug) {
+        targets.push(self);
+        continue;
+      }
+      const skill = familySkillFor(slug);
+      if (skill) targets.push(withDoctorTarget(skill, path.join(dest, skill.slug)));
+    }
+    return targets;
   }
   const found = [];
   let entries;
-  try { entries = fs.readdirSync(dest, { withFileTypes: true }); } catch (_) { return found; }
+  try { entries = fs.readdirSync(dest, { withFileTypes: true }); } catch (_) { return self ? [self] : found; }
   for (const entry of entries) {
     if (!entry.isDirectory() || !/^yotta-/.test(entry.name)) continue;
     const skill = familySkillFor(entry.name);
-    if (skill) found.push(skill);
+    if (skill) found.push(withDoctorTarget(skill, path.join(dest, skill.slug)));
   }
+  if (found.length === 0 && self) return [self];
   return found;
 }
 
 function doctorExitCode(payload) {
   if (payload.ok) return 0;
+  if (payload.checked === 0) return 4;
   const manifestFailure = payload.results.some((result) =>
     (result.checks || []).some((check) =>
       (check.id === 'manifest' || check.id === 'manifest_trust') && !check.ok));
@@ -861,7 +896,7 @@ function runDoctor(opts, dest) {
   }
 
   for (const skill of targets) {
-    const target = path.join(dest, skill.slug);
+    const target = skill.target || path.join(dest, skill.slug);
     const result = healthLib.checkInstalledSkill({
       slug: skill.slug,
       target,
