@@ -124,7 +124,7 @@ CLI 文本输出只在状态非 `not_installed` 时多一行「动态路由: ...
     "skills": [
       {
         "slug": "yotta-memory",
-        "version": "0.19.0",
+        "version": "0.20.0",
         "status": "known",
         "description": "文件式智能体记忆...",
         "first_seen": "2026-08-23T00:00:00Z",
