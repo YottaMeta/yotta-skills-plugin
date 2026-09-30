@@ -1,12 +1,12 @@
 # 元阁 yotta-skills — Agent Plugin
 
-The YottaMeta skill-family installer and orchestrator, packaged as an Agent Plugin with a built-in MCP server.
+The YottaMeta skill-family installer and orchestrator, packaged as an Agent Plugin and DeepSeek Harness bundle with a built-in MCP server.
 
 [English](#english) | [中文](#中文)
 
 ## English
 
-This repository is a standalone [Agent Plugins 1.0](https://agent-plugins.org) plugin. It packages one skill and one MCP server in the standard layout (`plugin.json`, `skills/`, `mcp.json`).
+This repository is a standalone [Agent Plugins 1.0](https://agent-plugins.org) plugin. It packages one skill and one MCP server in the standard layout (`plugin.json`, `skills/`, `mcp.json`). It also declares a DeepSeek Harness (DSH) profile bundle.
 
 ### Install
 
@@ -33,6 +33,17 @@ Agent Plugins defines the package format, not a universal installer command. Use
 | Grok Bot | [Skills, routines, and automations](https://docs.x.ai/grok-bot/skills-routines-and-automations) |
 | NanoClaw | [Templates](https://github.com/nanocoai/nanoclaw/blob/main/docs/templates.md) |
 
+#### DeepSeek Harness (DSH)
+
+This repository also declares a DSH profile bundle. In DSH, open the plugin installer and add:
+
+```text
+https://github.com/YottaMeta/yotta-skills-plugin
+```
+
+DSH reads `dsh.bundle.patch` from the repository root and installs the bundled `yotta-skills` skill plus the `mcp__yotta-skills__*` tools from the stdio MCP server. Requires a DSH build with profile-bundle support (verified with DSH desktop 0.2.0-rc.2), Python 3.8+ for the MCP server, and Node.js 18+ when a tool invokes the YottaSkills CLI.
+
+
 Codex is verified by YottaMeta. Other clients are linked from the official Agent Plugins compatibility page and are not yet verified here.
 
 ### What you get
@@ -57,7 +68,7 @@ MIT — see `LICENSE` and the license inside the skill payload.
 
 ## 中文
 
-本仓库是一个独立的 [Agent Plugins 1.0](https://agent-plugins.org) 插件，按标准目录结构打包一项技能和一个 MCP server（`plugin.json`、`skills/`、`mcp.json`）。
+本仓库是一个独立的 [Agent Plugins 1.0](https://agent-plugins.org) 插件，按标准目录结构打包一项技能和一个 MCP server（`plugin.json`、`skills/`、`mcp.json`）。 同时声明 DeepSeek Harness（DSH）profile bundle。
 
 ### 安装
 
@@ -83,6 +94,17 @@ Agent Plugins 只定义包格式，不定义统一安装命令。请按你所用
 | OpenClaw | [Plugin bundles](https://docs.openclaw.ai/plugins/bundles) |
 | Grok Bot | [Skills, routines, and automations](https://docs.x.ai/grok-bot/skills-routines-and-automations) |
 | NanoClaw | [Templates](https://github.com/nanocoai/nanoclaw/blob/main/docs/templates.md) |
+
+#### DeepSeek Harness（DSH）
+
+本仓库同时声明 DSH profile bundle。在 DSH 中打开插件安装入口，输入：
+
+```text
+https://github.com/YottaMeta/yotta-skills-plugin
+```
+
+DSH 会读取仓库根 `package.json` 的 `dsh.bundle.patch`，安装包内 `yotta-skills` 技能与 stdio MCP server 提供的 `mcp__yotta-skills__*` 工具。需要支持 profile bundle 的 DSH（已在 DSH 桌面 0.2.0-rc.2 核对）；MCP server 需要 Python 3.8+；工具调用元阁 CLI 时需要 Node.js 18+。
+
 
 Codex 已由 YottaMeta 实测；其他客户端仅链接官方说明，尚未在本仓库逐项实测。
 

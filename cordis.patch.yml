@@ -1,0 +1,17 @@
+- insert:
+    - id: yottameta-bundled-skills
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        providerName: yottameta-bundled
+        includeDefaultRoots: false
+        bundledSkillDir: !!js ctx.get('profileContext').dir + '/node_modules/@yottameta/yotta-skills-plugin/skills'
+        watch: false
+    - id: yottameta-yotta-skills-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: yotta-skills
+        transport: stdio
+        command: python
+        args:
+          - !!js ctx.get('profileContext').dir + '/node_modules/@yottameta/yotta-skills-plugin/skills/yotta-skills/scripts/yotta-skills-mcp.py'
+        failOnStartupError: true
