@@ -18,7 +18,7 @@
 | `yotta-logs` | 元史 | `@yottameta/yotta-logs` | 0.3.2 | 跨智能体历史会话 / 记忆日志检索 |
 | `yotta-security-testing` | 元测 | `@yottameta/yotta-security-testing` | 0.3.1 | 有纪律的 AI 安全测试方法论 + Scope Guard 五道防线 |
 | `yotta-agent-hardening` | 元安全 | `@yottameta/yotta-agent-hardening` | 0.2.6 | 防御向 AI 智能体自身安全加固（配置面静态扫描三域） |
-| `yotta-skill-creator` | 元造 | `@yottameta/yotta-skill-creator` | 0.1.3 | 工坊「造」：端到端造技能脚手架 |
+| `yotta-skill-creator` | 元造 | `@yottameta/yotta-skill-creator` | 0.1.4 | 工坊「造」：端到端造技能脚手架 |
 | `yotta-publish-guard` | 元守 | `@yottameta/yotta-publish-guard` | 0.4.2 | 工坊「守」：发布前守门（版本四件对齐 + 三通道查重） |
 | `yotta-logwatch` | 元察 | `@yottameta/yotta-logwatch` | 0.3.0 | 安全日志分析检测引擎（攻击链识别/告警聚合） |
 | `yotta-intel` | 元情 | `@yottameta/yotta-intel` | 0.2.1 | 威胁情报 IOC 提取与规范化引擎（STIX-lite） |
@@ -29,7 +29,7 @@
 | `yotta-verify` | 元信 | `@yottameta/yotta-verify` | 0.3.3 | 装前安全扫描器 + audited 徽章（prompt injection + 危险模式） |
 | `yotta-compliance` | 元规 | `@yottameta/yotta-compliance` | 0.1.0 | 本地确定性合规条款审查（PIPL + 数据出境规则包 / 证据锚点 / 框架覆盖分级） |
 | `yotta-mirror` | 元镜 | `@yottameta/yotta-mirror` | 0.1.0 | 本地确定性学情分析（知识点掌握率 / 分层与临界生 / 薄弱点诊断，学生数据不出本机） |
-| `yotta-lesson` | 元案 | `@yottameta/yotta-lesson` | 0.1.0 | 本地确定性教案骨架与覆盖校验（课标映射 / 环节时间精确分配 / 缺口检查） |
+| `yotta-lesson` | 元案 | `@yottameta/yotta-lesson` | 0.1.1 | 本地确定性教案骨架与覆盖校验（课标映射 / 环节时间精确分配 / 缺口检查） |
 | `yotta-item` | 元题 | `@yottameta/yotta-item` | 0.1.0 | 本地确定性组卷与试卷校验（双向细目表 / 题库选题 / 缺口检查） |
 | `yotta-school-doc` | 元公 | `@yottameta/yotta-school-doc` | 0.1.2 | 本地确定性学校公文可信起草与校验（文种规则包 / 可复算骨架 / 12 类缺口） |
 

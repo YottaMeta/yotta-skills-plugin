@@ -42,9 +42,10 @@ const m1FeaturesLib = require('../lib/m1-features');
 const routeFeaturesLib = require('../lib/route-features');
 const routeDynamicLib = require('../lib/route-dynamic');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
+const { COPY_SKIP, copyDir } = require('../lib/copy-tree');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.23.1';
+let VERSION = '0.23.2';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -513,24 +514,7 @@ async function runUpdateAuto(opts, dest) {
   return { code: failed2 > 0 ? autoExitCode : 0 };
 }
 
-function shouldSkip(name, isFile) {
-  if (name === '__pycache__' || name === '.pytest_cache' || name === '.mypy_cache') return true;
-  if (isFile && (name.endsWith('.pyc') || name.endsWith('.pyo'))) return true;
-  return false;
-}
-function copyDir(src, dst, skip) {
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (skip.has(entry.name) || shouldSkip(entry.name, entry.isFile())) continue;
-    const s = path.join(src, entry.name);
-    const d = path.join(dst, entry.name);
-    if (entry.isDirectory()) {
-      fs.mkdirSync(d, { recursive: true });
-      copyDir(s, d, skip);
-    } else if (entry.isFile()) {
-      fs.copyFileSync(s, d);
-    }
-  }
-}
+// 复制原语（顶层跳过口径 / 缓存清理）统一在 lib/copy-tree.js，此处不再保留第二份实现。
 
 function resolveTargetDir(opts) {
   if (opts.dir) return path.resolve(opts.dir);
@@ -659,8 +643,6 @@ function extractTarball(tarball, extractDir) {
   return { pkgDir };
 }
 
-const COPY_SKIP = new Set(['package.json', 'bin', 'node_modules', '.git', '__pycache__']);
-
 function ensureGate(context) {
   const { skill, extracted, dest, opts } = context;
   const current = findVerifyEngine(dest, opts);
@@ -716,7 +698,7 @@ function ensureGate(context) {
 const installOne = createInstaller({
   runNpmPack,
   extractTarball,
-  copyDir: (src, dst) => copyDir(src, dst, COPY_SKIP),
+  copyDir: (src, dst) => copyDir(src, dst, COPY_SKIP, true),
   readInstalledVersion,
   ensureGate,
   scanTarget,
