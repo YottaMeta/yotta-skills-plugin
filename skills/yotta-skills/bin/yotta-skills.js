@@ -39,10 +39,12 @@ const scanPolicyLib = require('../lib/scan-policy');
 const npmPackLib = require('../lib/npm-pack');
 const usageJournalLib = require('../lib/usage-journal');
 const m1FeaturesLib = require('../lib/m1-features');
+const routeFeaturesLib = require('../lib/route-features');
+const routeDynamicLib = require('../lib/route-dynamic');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.22.2';
+let VERSION = '0.23.0';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -1250,95 +1252,40 @@ function runReindex(opts) {
   out('注册表: ' + scan.registryPath());
 }
 
-function dynamicBlock(status, providerId, note) {
-  return {
-    status: status || 'not_installed',
-    provider_id: providerId || '',
-    applied: false,
-    added: [],
-    dropped: [],
-    note: note || '',
-  };
-}
-
 /**
  * o1.route 动态扩展口：静态结果先算必算；provider 只允许在已装注册表白名单内增补 / 重排，
  * 任何失败都回静态结果（fail-open）。协议见 references/provider-protocol.md。
  */
 function applyDynamicRoute(result, registry, opts) {
   const provider = require('../lib/provider');
+  const { PLAYBOOKS } = require('../lib/route');
+  const usage = usageJournalLib.readUsage();
+  const payload = routeFeaturesLib.buildRouteFeatures({
+    request: String(opts.route || ''),
+    registry,
+    staticResult: result,
+    usage,
+    playbooks: PLAYBOOKS,
+  });
   let run;
   try {
-    run = provider.runCapability('o1.route', {
-      request: String(opts.route || ''),
-      static_result: {
-        playbook: result.playbook.id,
-        confidence: result.confidence,
-        skills: result.skills.map((skill) => skill.slug),
-      },
-      installed_skills: Object.values(registry.skills || {})
-        .filter((record) => record && record.status !== 'gone')
-        .map((record) => ({ slug: record.slug, version: record.version || '', sources: record.sources || [] })),
-    });
+    run = provider.runCapability('o1.route', payload);
   } catch (e) {
-    return dynamicBlock('error', '', '动态路由装载失败：' + e.message);
+    return routeDynamicLib.dynamicBlock('error', '', '动态路由装载失败：' + e.message);
   }
-  const block = dynamicBlock(run.status, run.provider_id, run.note || run.message || '');
+  const block = routeDynamicLib.dynamicBlock(run.status, run.provider_id, run.note || run.message || '');
   if (run.status !== 'active' || !run.data || typeof run.data !== 'object') return block;
-
-  const installed = new Set(Object.values(registry.skills || {})
-    .filter((record) => record && record.status !== 'gone')
-    .map((record) => record.slug));
-  const requested = Array.isArray(run.data.skills) ? run.data.skills : [];
-  const seen = new Set();
-  const ordered = [];
-  for (const item of requested) {
-    const slug = item && typeof item === 'object' ? String(item.slug || '') : '';
-    if (!slug) continue;
-    if (seen.has(slug) || !installed.has(slug)) {
-      block.dropped.push(slug);
-      continue;
-    }
-    seen.add(slug);
-    ordered.push({ slug, role: typeof item.role === 'string' ? item.role : '' });
-  }
-  if (!ordered.length) return block;
-
-  const staticBySlug = new Map(result.skills.map((skill) => [skill.slug, skill]));
-  const next = [];
-  for (const item of ordered) {
-    const existing = staticBySlug.get(item.slug);
-    if (existing) {
-      next.push(existing);
-      continue;
-    }
-    const record = registry.skills[item.slug] || {};
-    next.push({
-      slug: item.slug,
-      order: 0,
-      role: item.role || '由扩展提供方补充',
-      installed: true,
-      version: record.version || '',
-      sources: record.sources || [],
-      variants: Array.isArray(record.variants) ? record.variants : [],
-      conflicts: Array.isArray(record.conflicts) ? record.conflicts : [],
-    });
-  }
-  for (const skill of result.skills) {
-    if (!next.some((item) => item.slug === skill.slug)) next.push(skill);
-  }
-  next.forEach((skill, index) => { skill.order = index + 1; });
-  block.added = next.filter((skill) => !staticBySlug.has(skill.slug)).map((skill) => skill.slug);
-  block.applied = true;
-  result.skills = next;
-  return block;
+  return routeDynamicLib.applyDynamicData(result, run.data, registry, {
+    providerId: run.provider_id,
+  });
 }
 
 function dynamicRouteText(block) {
   if (!block) return '';
   if (block.status === 'active') {
     const who = block.provider_id ? '提供方 ' + block.provider_id : '提供方';
-    return '已应用（' + who + '；新增 ' + block.added.length + ' / 丢弃 ' + block.dropped.length + '）';
+    const confidence = block.confidence ? '；置信度 ' + block.confidence : '';
+    return '已应用（' + who + confidence + '；新增 ' + block.added.length + ' / 丢弃 ' + block.dropped.length + '）';
   }
   if (block.status === 'license_required') return '需授权（该能力需要授权后使用；静态路由不受影响）';
   if (block.status === 'timeout') return '未生效（提供方超时，已回落静态路由）';
@@ -1402,6 +1349,10 @@ function runRoute(opts) {
   if (result.dynamic.status !== 'not_installed') {
     out('');
     out('动态路由: ' + dynamicRouteText(result.dynamic));
+    if (result.dynamic.status === 'active' && opts.explain) {
+      if (result.dynamic.summary) out('动态摘要: ' + result.dynamic.summary);
+      for (const reason of result.dynamic.reasons || []) out('  - ' + reason);
+    }
   }
   out('');
   out('应用模式: 显式调用（可经用户确认后切换为按场景自动调用）');

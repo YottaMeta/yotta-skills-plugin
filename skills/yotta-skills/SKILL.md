@@ -1,6 +1,6 @@
 ---
 name: yotta-skills
-version: 0.22.2
+version: 0.23.0
 description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点 + 运行时 hook 适配。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；M1 记忆裁决层：usage enable/mark 本地结构化记录 + decide-memory / MCP decide_memory 输出 promote / hold / demote 只读建议（需授权 provider；只建议不删除、不自动写元忆）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么组合使用（安装与调用均由用户确认后执行）」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录（默认 --pin 锁死清单精确版本）；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工只建议跑本地 --reindex；更新检查走手动 --check 或后台 --check --scheduled）；运行时适配层：hook capabilities / evaluate / bind / unbind 按宿主能力矩阵执行六个统一事件并留证降级，元信 before_install 已接入安装管线；自包含零依赖，不依赖任何元技能；MCP 按需加载且需用户确认后写入配置（可选：list_installed_skills/describe_skill/reindex/route_request/decide_memory，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / usage 使用记录 / decide-memory 记忆裁决 / install / update / update --check（只读检查）/ update --check --scheduled（后台周检）/ update --auto（家族自动更新）/ hook 适配 / --inventory / --reindex / --dry-run 预览 / --pin（默认）/ --range。触发：需要批量安装或更新元阁全家技能、按场景组合多个元技能、路由或判断该用哪些技能、判断哪些技能值得长期记忆、查看或记录技能使用信号、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、评估宿主 hook 能力、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/hook 适配/该用哪个技能/路由技能/记忆裁决/技能该不该记住/盘点技能/查看已装技能 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + M1 记忆裁决只读建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index + hook 适配」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能、不静默写宿主配置或全局记忆、不自动删除技能或记忆；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
 license: MIT
 metadata:
@@ -43,7 +43,7 @@ metadata:
 **元阁全家的总编排策划 + 编排路由 + 一键安装 + 技能盘点**，一句话四层：
 
 - **路由层（该用哪几个）**：`--route "<需求摘要>"` / MCP `route_request` 查本地注册表与静态编排 playbook，输出候选组合、调用顺序、每个技能角色、置信度、依据、已装/缺失状态与安装命令；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；只建议安装，不自动安装。
-- **动态扩展口（v0.20.0，capability `o1.route`）**：可选调用用户显式配置的本地扩展提供方（provider），在已装注册表白名单内对路由结果增补 / 重排；静态 playbook 结果先算必算、永不缺席，未配置或调用失败时文本输出与历史一致，`--json` 仅多一个 `dynamic` 状态块。协议与配置见 `references/provider-protocol.md`。
+- **O1 动态路由层（v0.23.0，capability `o1.route`）**：可选调用用户显式配置的本地扩展提供方（provider），在已装注册表白名单内对路由结果增补 / 重排，并返回 `confidence` / `reasons` / `summary` / `alternatives`；静态 playbook 结果先算必算、永不缺席，未配置或调用失败时文本输出与历史一致，`--json` 仅多一个 `dynamic` 状态块。协议与配置见 `references/provider-protocol.md`。
 - **M1 记忆裁决层（哪些值得长期记住）**：`decide-memory` / MCP `decide_memory` 调用可选本地 provider（capability `m1.adjudicate`），输出 `promote / hold / demote` 只读建议、分数与信号明细；默认不写元忆、不删除技能。`usage` 默认关闭，用户显式开启后才记录结构化使用信号。协议与边界见 `references/provider-protocol.md`。
 - **策划层（怎么用）**：接到需求，先按「编排策划」定位命中哪个组合——哪些元技能搭配起来最强、适合什么场景、AI 该给出什么安装与调用建议（**安装与调用均由用户确认后执行**）。
 - **安装层（怎么装）**：一条 `npx -y @yottameta/yotta-skills` 把组合/全家装进指定智能体或目录——`--list` 看清单、`install` 装、`update` 增量更新、`doctor` 只读自检、`rollback` 恢复快照、`--dry-run` 预览、`--pin` 锁版本。
@@ -173,7 +173,7 @@ openclaw skills update @yottameta/yotta-skills
 | `hook bind --host <name> --manifest <file>` | 幂等注册 hook 声明；`hook unbind <id>` 反注册 |
 | `--inventory` | 盘点本机已装技能：扫描技能目录生成/更新注册表（自包含，不依赖元技能）；`--json` 输出 JSON、`--project` 附扫项目级目录 |
 | `--reindex` | 重扫注册表：扫描技能目录并增量合并变化（install / update 完成后 CLI 自动重扫；也可在会话开工等时机手动运行）；`--json` 输出 JSON、`--project` 附扫项目级目录；`--rescan` 同义 |
-| `--route <需求摘要>` | 静态编排路由：输出组合、调用顺序、技能角色、置信度、依据、已装/缺失状态与安装建议；`--json` 输出 JSON、`--project` 附扫项目级目录 |
+| `--route <需求摘要>` | 编排路由：输出组合、调用顺序、技能角色、置信度、依据、已装/缺失状态与安装建议；可选本地 provider 增补 / 重排并返回 `confidence` / `reasons` / `summary` / `alternatives`；`--json` 输出 JSON、`--project` 附扫项目级目录 |
 | `usage status` | 查看本地使用记录开关与计数；默认关闭，不创建文件 |
 | `usage enable` / `usage disable` | 开启 / 关闭 `--route` 的结构化使用记录；不记录需求原文 |
 | `usage mark --skill <slug> --signal used\|named\|accepted` | 记录一次显式使用信号；不要求先 enable |
@@ -340,7 +340,7 @@ npx -y @yottameta/yotta-skills usage reset --yes
 
 本技能自带一个 MCP server：`yotta-skills`（`scripts/yotta-skills-mcp.py`，零依赖、数据不出本机），
 基于 MCP 最新协议 2026-07-28（无状态时代；向后兼容 2025-11-25 及更早握手客户端）。
-提供 `list_installed_skills`（盘点）/ `describe_skill`（单技能详情）/ `reindex`（强制重扫）/ `route_request`（静态编排路由）/ `decide_memory`（M1 记忆裁决只读建议）五个工具。
+提供 `list_installed_skills`（盘点）/ `describe_skill`（单技能详情）/ `reindex`（强制重扫）/ `route_request`（编排路由，静态基线 + 可选本地动态扩展）/ `decide_memory`（M1 记忆裁决只读建议）五个工具。
 
 **按需加载，不走常驻**：本技能与 MCP 均为按需触发。默认以 CLI 为主
 （`npx -y @yottameta/yotta-skills --inventory`）；需要让 AI 通过工具直接调用时，再按下面配置启用。

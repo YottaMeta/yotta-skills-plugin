@@ -27,7 +27,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "0.22.2"
+VERSION = "0.23.0"
 TOOL_NAME = "yotta-skills"
 CN_NAME = "元阁"
 MCP_PROTOCOL_MODERN = "2026-07-28"
@@ -209,9 +209,9 @@ def mcp_tools():
         ),
         _tool_spec(
             "route_request",
-            "按需求摘要给出静态编排路由建议：候选组合、调用顺序、每个技能角色、置信度、依据、已装/缺失状态与安装命令。"
+            "按需求摘要给出编排路由建议：静态 playbook 基线 + 可选本地扩展提供方动态增补 / 重排；返回候选组合、调用顺序、每个技能角色、置信度、依据、已装 / 缺失状态与安装命令。"
             "并给出其他已装技能候选（仅按 frontmatter description 本地机械匹配、标注未扫描状态，不读取全文指令、不自动调用）。"
-            "只建议安装，不自动安装；数据不出本机。",
+            "动态扩展仅在配置了本地 provider 且授权可用时生效；未配置 / 未授权 / 异常时回落静态路由。只建议安装，不自动安装；数据不出本机。",
             {"request": {"type": "string", "description": "用户需求摘要"}},
             ["request"],
         ),
@@ -285,7 +285,7 @@ def handle_message(msg):
                 "result": _modern_ok({
                     "supportedVersions": [MCP_PROTOCOL_MODERN],
                     "capabilities": {"tools": {}},
-                    "instructions": "元阁 MCP（基于 MCP 最新协议 2026-07-28，向后兼容 2025-11-25 及更早握手）：本机技能盘点、静态编排路由与 M1 记忆裁决只读建议 list_installed_skills/describe_skill/reindex/route_request/decide_memory；数据不出本机。",
+                    "instructions": "元阁 MCP（基于 MCP 最新协议 2026-07-28，向后兼容 2025-11-25 及更早握手）：本机技能盘点、编排路由（静态基线 + 可选本地动态扩展）与 M1 记忆裁决只读建议 list_installed_skills/describe_skill/reindex/route_request/decide_memory；数据不出本机。",
                 }, (3600000, "public")),
             }
         if method == "tools/list":

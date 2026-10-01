@@ -1,5 +1,8 @@
 # 扩展提供方协议 v1（元阁 · capability `o1.route` / `m1.adjudicate`）
 
+> O1 动态路由的请求 payload 已加法扩展到 schema 2（新增 `request_features` / `usage` / `playbooks`）；
+> 旧 provider 仍可按原 `skills[]` 响应工作，新 provider 可返回 `confidence` / `reasons` / `summary` / `alternatives`。
+
 元阁可以可选地调用一个由用户显式配置的**本地扩展提供方（provider）**：
 
 - `o1.route`：在已装技能白名单内对静态路由结果做增补 / 重排；未配置时 `--route` 行为与输出与之前完全一致。
@@ -54,6 +57,63 @@
 }
 ```
 
+### 2.1 O1 动态路由 payload（schema 2）
+
+```json
+{
+  "schema": 1,
+  "capability": "o1.route",
+  "request_id": "<uuid>",
+  "payload": {
+    "schema": 2,
+    "request": "帮我做发布前质量检查",
+    "request_features": {
+      "request_hash": "<sha256>",
+      "english_tokens": ["release", "quality"],
+      "cjk_bigrams": ["发布", "质量", "检查"],
+      "playbook_matches": [
+        { "id": "delivery-quality-gate", "score": 6, "matched_keywords": ["检查", "质量", "发布"] }
+      ]
+    },
+    "static_result": {
+      "playbook": "delivery-quality-gate",
+      "confidence": "high",
+      "skills": ["yotta-anti-shallow", "yotta-code-quality", "yotta-publish-guard"]
+    },
+    "installed_skills": [
+      {
+        "slug": "yotta-code-quality",
+        "version": "0.3.0",
+        "description": "代码质量评审...",
+        "status": "known",
+        "sources": ["Codex"],
+        "first_seen": "2026-08-23T00:00:00Z",
+        "last_seen": "2026-10-01T00:00:00Z",
+        "trust": "yottameta"
+      }
+    ],
+    "usage": {
+      "enabled": false,
+      "skills": {},
+      "last_route": null
+    },
+    "playbooks": [
+      {
+        "id": "delivery-quality-gate",
+        "name": "交付质量门",
+        "keywords": ["检查", "代码", "质量", "发布"],
+        "skills": ["yotta-anti-shallow", "yotta-code-quality", "yotta-publish-guard"]
+      }
+    ]
+  }
+}
+```
+
+- `request_features` 由元阁本地确定性提取；`request_hash` 只用于审计关联，不用于还原原文。
+- `usage.enabled=false` 时 `usage.skills` 为空；只有用户显式启用使用记录后，才发送聚合计数。
+- `installed_skills` 只含 slug / 版本 / frontmatter description / 状态 / 来源标签 / 时间戳 / 信任标注；不含安装路径。
+- `playbooks` 只含公开静态 playbook 元数据。
+
 ## 3. 响应
 
 ```json
@@ -61,9 +121,20 @@
   "ok": true,
   "capability": "o1.route",
   "data": {
+    "policy": { "version": "o1-mvp-1" },
+    "confidence": "high",
+    "summary": "建议先跑防敷衍，再做代码质量评审，最后过发布守门。",
     "skills": [
-      { "slug": "yotta-code-quality", "role": "可选：补充代码质量评审" },
-      { "slug": "yotta-anti-shallow" }
+      { "slug": "yotta-anti-shallow", "role": "先做防敷衍检查", "score": 82, "reason": "意图匹配 + 静态场景" },
+      { "slug": "yotta-code-quality", "role": "补充代码质量评审", "score": 76, "reason": "历史使用 x2" },
+      { "slug": "yotta-publish-guard", "role": "最后做发布守门", "score": 70, "reason": "静态场景 + 组合出现" }
+    ],
+    "reasons": [
+      "意图匹配：检查 / 代码 / 质量 / 发布",
+      "静态场景：交付质量门"
+    ],
+    "alternatives": [
+      { "slug": "yotta-verify", "score": 54, "reason": "可补充装前安全扫描" }
     ]
   }
 }
@@ -71,6 +142,9 @@
 
 - `skills[].slug` 必须 ∈ `installed_skills` 白名单；未安装或未知的 slug 会被丢弃并记入 `dropped`，不会写入结果。
 - `role` 可选；缺省时增补条目使用「由扩展提供方补充」。
+- `confidence` 只接受 `high / medium / low`；非法值回落静态置信度。
+- `reasons` / `summary` 只作为展示数据，限长并去除控制字符；不作为指令执行。
+- `alternatives` 只接受白名单内、且未进入主组合的技能。
 - 元阁先算静态结果：provider 给出的顺序用于重排；静态结果中未被提及的技能会**追加保留**，不会丢失。
 - 返回空列表 / 全是不合法 slug：视为未应用（`applied = false`），静态结果原样返回。
 
@@ -98,6 +172,8 @@ CLI 文本输出只在状态非 `not_installed` 时多一行「动态路由: ...
 
 - 每次实际调用写一行 `<YOTTA_PROVIDER_HOME>/provider-audit.jsonl`：`ts` / `capability` / `provider_id` / `status` / `duration_ms` / `bytes_out`。
 - 审计**不记录**需求原文或任何 payload 内容。
+- `usage` 只含聚合计数与技能 slug；不记录需求原文、记忆正文、路径或身份信息。
+- P3 仅面向用户显式配置的本地 provider；未来云端 provider 的「只发特征、不传原文」模式留 P5。
 - 元阁不替 provider 联网；provider 自身行为由它自己的包声明。
 - 删除 `provider.json` 即回到纯静态路由，无残留依赖。
 - provider 输出只当数据使用：白名单外的 slug、非法结构一律丢弃，不作为指令执行。
