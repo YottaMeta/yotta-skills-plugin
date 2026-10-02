@@ -151,6 +151,7 @@ function createInstaller(deps) {
         const scanResult = deps.scanTarget(gate.engine, extracted.pkgDir, {
           slug: skill.slug,
           version: packed.resolved,
+          opts,
         });
         if (!scanResult.ok) {
           safeRecord({ event: 'before_install', skill: skill.slug, decision: 'block', error: scanResult.error });
@@ -338,6 +339,8 @@ function createInstaller(deps) {
           verdict: scan.verdict,
           decision: scan.decision,
           scan_policy: scan.policy || null,
+          fetch_channel: packed.channel || null,
+          extract_channel: extracted.channel || null,
           npm_registry_fallback: Boolean(packed.registryFallback),
           snapshot,
         });
@@ -351,6 +354,8 @@ function createInstaller(deps) {
         package: skill.pkg,
         version: packed.resolved || skill.version,
         decision: 'allow',
+        fetch_channel: packed.channel || null,
+        extract_channel: extracted.channel || null,
         snapshot,
         lifecycle: {
           setup: lifecycleSummary(lifecycle.setup),

@@ -1,6 +1,6 @@
 ---
 name: yotta-skills
-version: 0.23.3
+version: 0.24.0
 description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点 + 运行时 hook 适配。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；M1 记忆裁决层：usage enable/mark 本地结构化记录 + decide-memory / MCP decide_memory 输出 promote / hold / demote 只读建议（需授权 provider；只建议不删除、不自动写元忆）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么组合使用（安装与调用均由用户确认后执行）」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录（默认 --pin 锁死清单精确版本）；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工只建议跑本地 --reindex；更新检查走手动 --check 或后台 --check --scheduled）；运行时适配层：hook capabilities / evaluate / bind / unbind 按宿主能力矩阵执行六个统一事件并留证降级，元信 before_install 已接入安装管线；自包含零依赖，不依赖任何元技能；MCP 按需加载且需用户确认后写入配置（可选：list_installed_skills/describe_skill/reindex/route_request/decide_memory，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / usage 使用记录 / decide-memory 记忆裁决 / install / update / update --check（只读检查）/ update --check --scheduled（后台周检）/ update --auto（家族自动更新）/ hook 适配 / --inventory / --reindex / --dry-run 预览 / --pin（默认）/ --range。触发：需要批量安装或更新元阁全家技能、按场景组合多个元技能、路由或判断该用哪些技能、判断哪些技能值得长期记忆、查看或记录技能使用信号、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、评估宿主 hook 能力、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/hook 适配/该用哪个技能/路由技能/记忆裁决/技能该不该记住/盘点技能/查看已装技能 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + M1 记忆裁决只读建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index + hook 适配」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能、不静默写宿主配置或全局记忆、不自动删除技能或记忆；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
 license: MIT
 metadata:
@@ -163,6 +163,7 @@ openclaw skills update @yottameta/yotta-skills
 | `install --dir <path>` | 装全家到指定目录，每个技能落在 `<path>/<slug>` |
 | `install <skill>... [--agent <name> \| --dir <path>]` | 只装指定的一个或多个技能 |
 | `update [--agent <name> \| --dir <path>]` | 增量更新：补齐缺失技能、升级版本不一致的技能 |
+| `update --installed-only [--agent <name> \| --dir <path>]` | 只维护目标目录**已安装**的家族技能（不补装缺失；无匹配时退出码 0）——接管现有元技能的标准配方 |
 | `update --check [--agent <name> \| --dir <path>]` | 只读检查更新：联网对 npm 最新，不改动；退出码 0=全部最新 / 3=有更新 / 1=查失败 |
 | `update --check --scheduled [--agent <name> \| --dir <path>]` | 后台周检入口：未到期不联网；到期只检查一次并写本地缓存；文本失败静默，`--json` 保留诊断；始终退出 0 |
 | `update --auto [--agent <name> \| --dir <path>]` | 检查到家族更新后自动更新（仅 yotta-* 自家家族，含装前安全扫描） |
@@ -184,6 +185,9 @@ openclaw skills update @yottameta/yotta-skills
 | `--pin` | 锁死清单精确版本（默认 range：跟随同 major 最新 patch） |
 | `--force` | 已是最新也重新安装 |
 | `--skip-scan` | 人工应急路径：跳过元信门禁并标记 `explicit-unverified`；不得用于 `update --auto` |
+| `--only <a,b>` | install / update 只处理指定技能（与位置参数技能列表合并去重） |
+| `--domain <name>` | install / update 只处理指定家族（security / quality / memory / writing / workflow / entry / compliance / education / distribution） |
+| `--installed-only` | update 只维护目标目录已安装的技能（不补装缺失；无匹配时退出码 0） |
 | `--npm <path>` | 指定 npm 可执行文件 |
 | `--python <path>` | 指定 python 可执行文件（元信 scan 用） |
 | `--verify <path>` | 指定 yotta_verify.py 路径 |
@@ -191,6 +195,22 @@ openclaw skills update @yottameta/yotta-skills
 | `-h, --help` / `-v, --version` | 帮助 / 版本 |
 
 不带命令直接给技能名时，等价于 `install <skill>`。
+
+### 范围控制（接多少管多少）
+
+| 用法 | 范围 |
+|---|---|
+| `install` / `update`（无旗标） | 全量清单：install 安装全部；update 补齐缺失 + 升级已装（现状语义不变） |
+| `update --installed-only` | 只维护目标目录已安装的家族技能（不补装缺失；`skills.json` 只作身份 / 版本参照） |
+| `--only <a,b>` / `--domain <name>` | 只处理指定技能 / 家族（可与 `--installed-only` 取交集） |
+| `update --check` / `--auto` | 只检查 / 维护已装技能，不补装缺失 |
+
+已管理且已最新 → 跳过（退出码 0）；清单内但机器未装 → 不动作、不新增、不报错；
+非家族 / 未收录目录 → 忽略不报错。标准接管配方：
+
+```bash
+npx -y @yottameta/yotta-skills update --installed-only --dir <技能目录>
+```
 
 ## 运行时 hook 适配层
 
@@ -407,6 +427,18 @@ npx -y @yottameta/yotta-skills usage reset --yes
 `workbuddy` `kiro` `trae` `trae-cn` `qwen` `comate` `codebuddy` `kimi` `agents`。
 未收录的智能体请用 `--dir` 指定其技能目录（`.agents/skills` 不是通用目录）。
 
+## 依赖与回退链
+
+| 依赖 | 角色 | 缺失时 |
+|---|---|---|
+| Node.js 18+ | 必需（CLI 本体） | 明确提示 + 按平台给安装命令 |
+| npm | 拉包**回退通道** | 不影响：内置拉包为主 |
+| 系统 tar | 解包**回退通道** | 不影响：内置解包为主 |
+| Python 3.8+ | 元信装前扫描 | 门禁阻断；优先用 `--python` / `YOTTA_SKILLS_PYTHON` 指向宿主自带 Python（如 YottaCode），确实没有时用 `--skip-scan` 应急（`explicit-unverified`） |
+
+缺依赖时按需给出「需要什么 / 为什么 / 一条修复命令 / 不影响使用」人话提示，不常驻提醒；
+`doctor` 的依赖自检块只告警不失败。
+
 ## 环境变量
 
 | 变量 | 作用 |
@@ -414,6 +446,9 @@ npx -y @yottameta/yotta-skills usage reset --yes
 | `YOTTA_SKILLS_NPM` | 指定 npm 可执行文件（同 `--npm`） |
 | `YOTTA_SKILLS_NPM_FLAGS` | 追加传给 `npm pack` 的参数（按空白拆分，如 `--registry=...`） |
 | `YOTTA_SKILLS_NO_FALLBACK` | 设为 `1` 时禁用「默认源 404 → 官方源重试」的自动回退 |
+| `YOTTA_SKILLS_FETCH` | 拉包通道：`builtin`（仅内置）/ `npm`（仅 npm）；缺省内置为主、失败回退 npm |
+| `YOTTA_SKILLS_EXTRACT` | 解包通道：`builtin`（仅内置）/ `tar`（仅系统 tar）；缺省内置为主、失败回退系统 tar |
+| `YOTTA_SKILLS_REGISTRY` | registry 地址（默认 `https://registry.npmjs.org/`；内置拉包与更新检查共用；支持 `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY`） |
 | `YOTTA_SKILLS_PYTHON` | 指定 python 可执行文件（元信 scan 用，同 `--python`） |
 | `YOTTA_SKILLS_VERIFY` | 指定 yotta_verify.py 路径（同 `--verify`） |
 | `YOTTA_SKILLS_MANIFEST` | 指定技能清单 JSON 路径（默认随包 skills.json） |

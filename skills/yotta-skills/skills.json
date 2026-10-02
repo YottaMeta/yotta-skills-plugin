@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "updated": "2026-10-01",
+  "updated": "2026-10-02",
   "note": "清单同步要求：每次技能发布新版本后，按 YottaSkills 技能登记表更新本文件（登记表为内部台账，不随包分发）。",
   "skills": [
     {
@@ -8,6 +8,7 @@
       "name": "元谨",
       "pkg": "@yottameta/yotta-anti-shallow",
       "version": "1.4.2",
+      "domain": "quality",
       "desc": "防 AI 敷衍规则引擎（深入分析/根因追溯时激活）"
     },
     {
@@ -15,6 +16,7 @@
       "name": "元质",
       "pkg": "@yottameta/yotta-code-quality",
       "version": "0.4.2",
+      "domain": "quality",
       "desc": "结对式代码质量评审（十二类腐化风险 + 0-100 健康分）"
     },
     {
@@ -22,6 +24,7 @@
       "name": "元序",
       "pkg": "@yottameta/yotta-workflow",
       "version": "0.4.3",
+      "domain": "workflow",
       "desc": "跨会话/跨项目通用工作流协议（状态就近存）"
     },
     {
@@ -29,6 +32,7 @@
       "name": "元忆",
       "pkg": "@yottameta/yotta-memory",
       "version": "0.20.1",
+      "domain": "memory",
       "desc": "有权限边界的文件式智能体记忆（FACT/PREF/BOUND/COMMIT）"
     },
     {
@@ -36,6 +40,7 @@
       "name": "元习",
       "pkg": "@yottameta/yotta-learn",
       "version": "0.2.2",
+      "domain": "memory",
       "desc": "学习沉淀 CLI：错误/纠正/洞见沉淀为 .learnings/ 条目"
     },
     {
@@ -43,6 +48,7 @@
       "name": "元安",
       "pkg": "@yottameta/yotta-security-audit",
       "version": "0.3.1",
+      "domain": "security",
       "desc": "安全扫描引擎：13 类检测器 + 系统安全基线 + 学生数据隐私（教育版）"
     },
     {
@@ -50,6 +56,7 @@
       "name": "元审",
       "pkg": "@yottameta/yotta-vetter",
       "version": "0.2.7",
+      "domain": "security",
       "desc": "安全审查协议：四阶段 review + SAFE TO INSTALL 判定"
     },
     {
@@ -57,6 +64,7 @@
       "name": "元析",
       "pkg": "@yottameta/yotta-recon",
       "version": "0.1.8",
+      "domain": "security",
       "desc": "跨智能体网络侦察：零依赖端口/服务/版本指纹探测"
     },
     {
@@ -64,6 +72,7 @@
       "name": "元盾",
       "pkg": "@yottameta/yotta-guardian",
       "version": "0.1.8",
+      "domain": "security",
       "desc": "跨智能体危险调用拦截护栏：确定性规则 + 可插拔意图验证"
     },
     {
@@ -71,6 +80,7 @@
       "name": "元真",
       "pkg": "@yottameta/yotta-humanize",
       "version": "0.2.2",
+      "domain": "writing",
       "desc": "去 AI 味中文写作编辑：检测器引擎"
     },
     {
@@ -78,6 +88,7 @@
       "name": "元史",
       "pkg": "@yottameta/yotta-logs",
       "version": "0.3.3",
+      "domain": "memory",
       "desc": "跨智能体历史会话 / 记忆日志检索"
     },
     {
@@ -85,6 +96,7 @@
       "name": "元测",
       "pkg": "@yottameta/yotta-security-testing",
       "version": "0.3.2",
+      "domain": "security",
       "desc": "有纪律的 AI 安全测试方法论 + Scope Guard 五道防线"
     },
     {
@@ -92,6 +104,7 @@
       "name": "元安全",
       "pkg": "@yottameta/yotta-agent-hardening",
       "version": "0.2.7",
+      "domain": "security",
       "desc": "防御向 AI 智能体自身安全加固（配置面静态扫描三域）"
     },
     {
@@ -99,6 +112,7 @@
       "name": "元造",
       "pkg": "@yottameta/yotta-skill-creator",
       "version": "0.1.5",
+      "domain": "quality",
       "desc": "工坊「造」：端到端造技能脚手架"
     },
     {
@@ -106,6 +120,7 @@
       "name": "元守",
       "pkg": "@yottameta/yotta-publish-guard",
       "version": "0.4.3",
+      "domain": "quality",
       "desc": "工坊「守」：发布前守门（版本四件对齐 + 三通道查重）"
     },
     {
@@ -113,6 +128,7 @@
       "name": "元察",
       "pkg": "@yottameta/yotta-logwatch",
       "version": "0.3.1",
+      "domain": "security",
       "desc": "安全日志分析检测引擎（攻击链识别/告警聚合）"
     },
     {
@@ -120,6 +136,7 @@
       "name": "元情",
       "pkg": "@yottameta/yotta-intel",
       "version": "0.2.2",
+      "domain": "security",
       "desc": "威胁情报 IOC 提取与规范化引擎（STIX-lite）"
     },
     {
@@ -127,6 +144,7 @@
       "name": "元钥",
       "pkg": "@yottameta/yotta-secret",
       "version": "0.2.2",
+      "domain": "security",
       "desc": "密钥 / 凭据泄露源头扫描引擎"
     },
     {
@@ -134,6 +152,7 @@
       "name": "元链",
       "pkg": "@yottameta/yotta-chain",
       "version": "0.1.5",
+      "domain": "security",
       "desc": "供应链依赖校验引擎"
     },
     {
@@ -141,6 +160,7 @@
       "name": "元鉴",
       "pkg": "@yottameta/yotta-triage",
       "version": "0.1.4",
+      "domain": "security",
       "desc": "恶意样本静态初筛引擎（哈希/熵/字符串/PE-ELF）"
     },
     {
@@ -148,6 +168,7 @@
       "name": "元引",
       "pkg": "@yottameta/yotta-prompt",
       "version": "0.2.4",
+      "domain": "entry",
       "desc": "意图澄清 + 生态入口（常驻注入，map 串联元阁全家）"
     },
     {
@@ -155,6 +176,7 @@
       "name": "元信",
       "pkg": "@yottameta/yotta-verify",
       "version": "0.3.4",
+      "domain": "security",
       "desc": "装前安全扫描器 + audited 徽章（prompt injection + 危险模式）"
     },
     {
@@ -162,6 +184,7 @@
       "name": "元规",
       "pkg": "@yottameta/yotta-compliance",
       "version": "0.1.1",
+      "domain": "compliance",
       "desc": "本地确定性合规条款审查（PIPL + 数据出境规则包 / 证据锚点 / 框架覆盖分级）"
     },
     {
@@ -169,6 +192,7 @@
       "name": "元镜",
       "pkg": "@yottameta/yotta-mirror",
       "version": "0.1.1",
+      "domain": "education",
       "desc": "本地确定性学情分析（知识点掌握率 / 分层与临界生 / 薄弱点诊断，学生数据不出本机）"
     },
     {
@@ -176,6 +200,7 @@
       "name": "元案",
       "pkg": "@yottameta/yotta-lesson",
       "version": "0.1.2",
+      "domain": "education",
       "desc": "本地确定性教案骨架与覆盖校验（课标映射 / 环节时间精确分配 / 缺口检查）"
     },
     {
@@ -183,6 +208,7 @@
       "name": "元题",
       "pkg": "@yottameta/yotta-item",
       "version": "0.1.1",
+      "domain": "education",
       "desc": "本地确定性组卷与试卷校验（双向细目表 / 题库选题 / 缺口检查）"
     },
     {
@@ -190,6 +216,7 @@
       "name": "元公",
       "pkg": "@yottameta/yotta-school-doc",
       "version": "0.1.3",
+      "domain": "education",
       "desc": "本地确定性学校公文可信起草与校验（文种规则包 / 可复算骨架 / 12 类缺口）"
     }
   ]

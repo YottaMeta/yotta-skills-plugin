@@ -24,6 +24,12 @@ function briefOf(raw) {
   return lines.slice(-4).join(' | ');
 }
 
+/** 把 spawn 层错误（如 ENOENT：npm 缺失）并入原始错误文本，供上层人话提示识别。 */
+function rawOf(result) {
+  if (result && result.error && result.error.message) return String(result.error.message).trim();
+  return String((result && result.stderr) || (result && result.stdout) || 'npm pack 失败').trim();
+}
+
 function findTarball(stdout, packDir, readdirSync) {
   const lines = String(stdout || '')
     .split(/\r?\n/)
@@ -71,14 +77,14 @@ function createPackRunner(deps) {
     let result = attempt(baseArgs);
     let registryFallback = false;
     if (result.status !== 0) {
-      const raw = (result.stderr || result.stdout || 'npm pack 失败').trim();
+      const raw = rawOf(result);
       if (!fallbackDisabled() && !hasRegistryFlag(baseArgs) && isNotFound(raw)) {
         result = attempt([...baseArgs, '--registry', OFFICIAL_REGISTRY]);
         registryFallback = result.status === 0;
       }
     }
     if (result.status !== 0) {
-      const raw = (result.stderr || result.stdout || 'npm pack 失败').trim();
+      const raw = rawOf(result);
       const brief = briefOf(raw) || 'npm pack 失败';
       const hint = isNotFound(raw) ? '\n  ' + FALLBACK_HINT : '';
       return { error: brief + hint, detail: raw };

@@ -16,7 +16,8 @@
  *   npx -y @yottameta/yotta-skills --dry-run              # 预览将安装清单（不联网、不改动）
  *
  * 版本策略：默认 `--pin` 锁死清单精确版本（可复现，不静默跟随浮动版本）；`--range` 才跟随同 major 最新 patch。
- * 依赖：Node.js 18+；npm（pack）；系统 tar（解压）；元信 scan 可选（装了 yotta-verify 自动启用）。
+ * 依赖：Node.js 18+（必需）；npm / 系统 tar 仅作回退通道（内置拉包 / 内置解包为主）；
+ *       元信 scan 需要 Python 3.8+（可 --python / YOTTA_SKILLS_PYTHON 指向宿主自带 Python）。
  * 边界：只做「清单 + 下载 + 落位 + 汇总」；不内置任何技能本体；不 -g 污染。
  */
 'use strict';
@@ -41,11 +42,14 @@ const usageJournalLib = require('../lib/usage-journal');
 const m1FeaturesLib = require('../lib/m1-features');
 const routeFeaturesLib = require('../lib/route-features');
 const routeDynamicLib = require('../lib/route-dynamic');
+const depsLib = require('../lib/deps');
+const untarLib = require('../lib/untar');
+const registryFetchLib = require('../lib/registry-fetch');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 const { COPY_SKIP, copyDir } = require('../lib/copy-tree');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.23.3';
+let VERSION = '0.24.0';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -113,6 +117,12 @@ function out(s) { process.stdout.write(s + '\n'); }
 
 function tarBin() { return 'tar'; }
 
+/** 供依赖提示复制的「原命令」回显（尽力还原参数，仅作提示用）。 */
+function currentCommand() {
+  const args = process.argv.slice(2).map((a) => (/\s/.test(a) ? '"' + a + '"' : a));
+  return 'yotta-skills ' + args.join(' ');
+}
+
 // 解析 npm 调用方式（Windows 的 .cmd 不能直接 spawn：EINVAL；cmd /c 引号脆弱）。
 // 最优：定位 npm.cmd -> 读内容 -> 提取 node_modules/npm/bin/npm-cli.js -> 用 node 直接执行。
 // 兼容：--npm / YOTTA_SKILLS_NPM 可指向 .js（node 执行）、.cmd（同样解析）、或可执行文件。
@@ -159,6 +169,7 @@ function parseArgs(argv) {
     check: false, auto: false, scheduled: false, registry: null, slug: null,
     host: null, event: null, manifest: null, context: null,
     signal: null, yes: false, explain: false, promote: false,
+    only: [], domain: null, installedOnly: false,
   };
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
@@ -199,6 +210,15 @@ function parseArgs(argv) {
     else if (a === '--auto') opts.auto = true;
     else if (a === '--scheduled') opts.scheduled = true;
     else if (a === '--registry') opts.registry = take('--registry');
+    else if (a === '--only') {
+      const value = take('--only');
+      for (const item of value.split(',')) {
+        const slug = item.trim().toLowerCase();
+        if (slug) opts.only.push(slug);
+      }
+    }
+    else if (a === '--domain') opts.domain = take('--domain').toLowerCase();
+    else if (a === '--installed-only') opts.installedOnly = true;
     else if (a === '--host') opts.host = take('--host').toLowerCase();
     else if (a === '--event') opts.event = take('--event').toLowerCase();
     else if (a === '--manifest') opts.manifest = take('--manifest');
@@ -227,6 +247,12 @@ function parseArgs(argv) {
   if (opts.scheduled && (opts.command !== 'update' || !opts.check || opts.auto)) {
     die('--scheduled 只能与 update --check 一起使用', 2, '请使用 update --check --scheduled；自动更新不使用后台调度入口。');
   }
+  if (opts.installedOnly && opts.command !== 'update') {
+    die('--installed-only 只能与 update 一起使用', 2, '标准配方：yotta-skills update --installed-only --dir <技能目录>。');
+  }
+  if (opts.domain && !domainValues().includes(opts.domain)) {
+    die('未知 domain: ' + opts.domain + '。可用: ' + domainValues().join(', '), 2, 'domain 对齐家族索引 9 类；用 yotta-skills --list 查看技能清单。');
+  }
   return opts;
 }
 
@@ -240,15 +266,39 @@ function specOf(s, pin) {
 function findSkill(slug) {
   return MANIFEST.find(s => s.slug === slug || s.pkg === slug || s.pkg.replace('@yottameta/', '') === slug);
 }
+
+const KNOWN_DOMAINS = ['security', 'quality', 'memory', 'writing', 'workflow', 'entry', 'compliance', 'education', 'distribution'];
+
+function domainValues() {
+  const values = new Set(KNOWN_DOMAINS);
+  for (const s of MANIFEST) if (s.domain) values.add(s.domain);
+  return [...values].sort();
+}
+
 function selectSkills(opts) {
-  if (opts.skills.length === 0) return MANIFEST;
   const picked = [];
+  const seen = new Set();
+  const push = (s) => {
+    if (!seen.has(s.slug)) {
+      seen.add(s.slug);
+      picked.push(s);
+    }
+  };
   for (const slug of opts.skills) {
     const s = findSkill(slug);
     if (!s) die('未知技能: ' + slug + '（可用: yotta-skills --list）', 2, '请先运行 --list 查看技能名，或检查拼写。');
-    picked.push(s);
+    push(s);
   }
-  return picked;
+  for (const slug of opts.only || []) {
+    const s = findSkill(slug);
+    if (!s) die('未知技能（--only）: ' + slug + '（可用: yotta-skills --list）', 2, '请先运行 --list 查看技能名，或检查拼写。');
+    push(s);
+  }
+  let list = picked.length > 0 ? picked : MANIFEST.slice();
+  if (opts.domain) {
+    list = list.filter((s) => s.domain === opts.domain);
+  }
+  return list;
 }
 
 function readInstalledVersion(dir) {
@@ -577,19 +627,24 @@ function findPython(opts) {
   return null;
 }
 
-function runScan(engine, skillDir) {
-  const python = findPython({});
-  if (!python) return { ok: false, error: '未找到 Python（元信 scan 需要 Python 3.8+）' };
+function runScan(engine, skillDir, opts) {
+  const python = findPython(opts || {});
+  if (!python) {
+    return {
+      ok: false,
+      error: depsLib.describe('python', { command: currentCommand(), missing: true }),
+    };
+  }
   return gateLib.runVerifier(engine, skillDir, { python, spawnSync });
 }
 
 function scanTarget(engine, skillDir, context) {
-  const scan = runScan(engine, skillDir);
+  const ctx = context || {};
+  const scan = runScan(engine, skillDir, ctx.opts);
   if (!scan.ok) {
     out('  元信 scan: ' + scan.error);
     return scan;
   }
-  const ctx = context || {};
   const reviewed = scanPolicyLib.applyScanPolicy(scan, {
     slug: ctx.slug,
     version: ctx.version,
@@ -612,18 +667,75 @@ function scanTarget(engine, skillDir, context) {
   return reviewed;
 }
 
+/** doctor 依赖自检（只告警不失败）：node / npm / python / tar 四项。 */
+function probeDependencies(opts) {
+  const npm = resolveNpm(opts);
+  const npmProbe = spawnSync(npm.bin, [...npm.prefix, '--version'], {
+    encoding: 'utf8',
+    timeout: 15000,
+    shell: npm.shell,
+  });
+  const python = findPython(opts);
+  const pythonProbe = python
+    ? spawnSync(python, ['--version'], { encoding: 'utf8', timeout: 15000 })
+    : null;
+  const tarProbe = spawnSync(tarBin(), ['--version'], { encoding: 'utf8', timeout: 15000 });
+  return depsLib.dependencyReport({
+    node: depsLib.nodeCheck(),
+    npm: { found: !!(npmProbe && npmProbe.status === 0), version: depsLib.versionLine(npmProbe) },
+    python: { found: !!python, version: depsLib.versionLine(pythonProbe), path: python || null },
+    tar: { found: !!(tarProbe && tarProbe.status === 0), version: depsLib.versionLine(tarProbe) },
+  });
+}
+
 // ── 安装 ───────────────────────────────────────────────────────────────────
 const runNpmPackBase = npmPackLib.createPackRunner({ spawnSync, specOf, resolveNpm });
 
+function fetchMode() {
+  const raw = String(process.env.YOTTA_SKILLS_FETCH || 'auto').trim().toLowerCase();
+  return raw === 'builtin' || raw === 'npm' ? raw : 'auto';
+}
+
+function extractMode() {
+  const raw = String(process.env.YOTTA_SKILLS_EXTRACT || 'auto').trim().toLowerCase();
+  return raw === 'builtin' || raw === 'tar' ? raw : 'auto';
+}
+
+/**
+ * 拉包：默认内置通道（Node 内置 https，零 npm），失败回退 npm pack。
+ * YOTTA_SKILLS_FETCH=builtin 禁用回退；=npm 直接走 npm（显式选择 / 离线测试）。
+ */
 function runNpmPack(skill, opts, packDir) {
+  const mode = fetchMode();
+  let builtin = null;
+  if (mode !== 'npm') {
+    builtin = registryFetchLib.fetchPackageSync(skill, opts, packDir);
+    if (!builtin.error) return builtin;
+  }
+  if (mode === 'builtin') {
+    return { error: '内置拉包失败（YOTTA_SKILLS_FETCH=builtin 已禁用 npm 回退）: ' + builtin.error };
+  }
   const packed = runNpmPackBase(skill, opts, packDir);
+  if (packed.error) {
+    const detail = packed.detail || packed.error;
+    let message = '拉包失败（内置 + npm 双通道）: 内置=' + (builtin ? builtin.error : '未启用') + '；npm=' + packed.error;
+    if (depsLib.isNpmMissing(detail)) {
+      message += '\n' + depsLib.describe('npm', { command: currentCommand(), missing: true });
+    }
+    return { error: message, detail };
+  }
+  packed.channel = 'npm';
+  if (builtin) {
+    packed.fallbackFrom = builtin.error;
+    out('  ↳ 拉包通道：内置失败（' + builtin.error + '）→ npm 回退成功');
+  }
   if (packed.registryFallback) {
     out('  ↳ npm 默认源 404，已用官方源重试成功（' + npmPackLib.OFFICIAL_REGISTRY + '）');
   }
   return packed;
 }
 
-function extractTarball(tarball, extractDir) {
+function extractWithSystemTar(tarball, extractDir) {
   const packDir = path.dirname(tarball);
   const tarballName = path.basename(tarball);
   fs.mkdirSync(extractDir, { recursive: true });
@@ -641,6 +753,34 @@ function extractTarball(tarball, extractDir) {
   const pkgDir = path.join(extractDir, 'package');
   if (!fs.existsSync(path.join(pkgDir, 'SKILL.md'))) return { error: '解压产物缺少 SKILL.md（' + tarball + '）' };
   return { pkgDir };
+}
+
+/**
+ * 解包：默认内置（zlib + tar 解析），失败回退系统 tar；
+ * YOTTA_SKILLS_EXTRACT=builtin 禁用回退；=tar 直接走系统 tar。
+ */
+function extractTarball(tarball, extractDir) {
+  const mode = extractMode();
+  let builtin = null;
+  if (mode !== 'tar') {
+    builtin = untarLib.extractTarballBuiltin(tarball, extractDir);
+    if (!builtin.error) return builtin;
+  }
+  if (mode === 'builtin') {
+    return { error: '内置解包失败（YOTTA_SKILLS_EXTRACT=builtin 已禁用 tar 回退）: ' + builtin.error };
+  }
+  const fallback = extractWithSystemTar(tarball, extractDir);
+  if (fallback.error) {
+    const message = '解包失败（内置 + 系统 tar 双通道）: 内置=' + (builtin ? builtin.error : '未启用') + '；tar=' + fallback.error +
+      '\n' + depsLib.describe('tar', { command: currentCommand(), missing: true });
+    return { error: message };
+  }
+  if (builtin) {
+    out('  ↳ 解包通道：内置失败（' + builtin.error + '）→ 系统 tar 回退成功');
+    fallback.fallbackFrom = builtin.error;
+  }
+  fallback.channel = 'tar';
+  return fallback;
 }
 
 function ensureGate(context) {
@@ -707,6 +847,11 @@ const installOne = createInstaller({
 
 function runInstall(opts, dest) {
   const skills = selectSkills(opts);
+  if (skills.length === 0) {
+    out('过滤后没有匹配的技能（--only / --domain），未执行任何操作。');
+    process.exitCode = 2;
+    return { failed: 1, exitCode: 2 };
+  }
   out('yotta-skills（元阁）v' + VERSION + ' —— 安装 ' + skills.length + ' 个技能 -> ' + dest);
   out('版本策略: ' + (opts.pin ? 'pin（锁死清单精确版本，默认）' : 'range（' + skillRange(skills[0]) + '，跟随最新 patch）'));
   const results = [];
@@ -738,8 +883,21 @@ function runInstall(opts, dest) {
 }
 
 function runUpdate(opts, dest) {
-  const skills = selectSkills(opts);
+  let skills = selectSkills(opts);
   out('yotta-skills（元阁）v' + VERSION + ' —— 增量更新 -> ' + dest);
+  if (opts.installedOnly) {
+    const candidates = skills.length;
+    skills = skills.filter((s) => readInstalledVersion(path.join(dest, s.slug)) !== null);
+    out('范围: 仅已安装技能（--installed-only；候选 ' + candidates + ' / 已装 ' + skills.length + '）');
+    if (skills.length === 0) {
+      out('目标目录未发现已安装的元阁家族技能，无动作（退出码 0）。');
+      return { failed: 0, exitCode: 0 };
+    }
+  } else if (skills.length === 0) {
+    out('过滤后没有匹配的技能（--only / --domain），未执行任何操作。');
+    process.exitCode = 2;
+    return { failed: 1, exitCode: 2 };
+  }
   const results = [];
   let failed = 0;
   let exitCode = 0;
@@ -920,6 +1078,7 @@ function runDoctor(opts, dest) {
     fixes.push.apply(fixes, result.fixes);
   }
 
+  const dependencies = probeDependencies(opts);
   const payload = {
     ok: errors.length === 0,
     dir: dest,
@@ -928,6 +1087,7 @@ function runDoctor(opts, dest) {
     errors,
     warnings,
     fixes: Array.from(new Set(fixes)),
+    dependencies,
   };
   const code = doctorExitCode(payload);
   if (opts.json) {
@@ -941,6 +1101,15 @@ function runDoctor(opts, dest) {
       for (const check of result.checks) {
         out('  ' + (check.ok ? '✔' : '✘') + ' ' + check.message + (check.hint ? '（修复: ' + check.hint + '）' : ''));
       }
+    }
+    out('');
+    out('依赖自检（只告警不失败）:');
+    for (const dep of dependencies) {
+      const mark = dep.ok ? '✔' : (dep.optional ? '△' : '✘');
+      out('  ' + mark + ' ' + dep.name + (dep.version ? ' ' + dep.version : '') +
+        '（需要 ' + dep.need + (dep.optional ? '；回退通道，可选' : '') + '）' +
+        (dep.ok ? '' : ' —— 影响：' + dep.why));
+      if (!dep.ok && dep.fix) out('      修复：' + dep.fix);
     }
     for (const item of warnings) out('[警告] ' + item);
     for (const item of fixes) out('[建议] ' + item);
@@ -1121,6 +1290,7 @@ function printHelp() {
   out('  yotta-skills install --dir <path>   装全家到指定目录');
   out('  yotta-skills install <skill> --dir <path>  装单个技能（可多个）');
   out('  yotta-skills update --agent <name>  增量更新已装技能（补齐缺失 / 版本不一致）');
+  out('  yotta-skills update --installed-only --dir <path>  只维护已装技能（接管现有元技能的标准配方）');
   out('  yotta-skills update --check         只读联网检查更新（退出码 0/3/1）');
   out('  yotta-skills update --check --scheduled  后台周检（未到期不联网；到期单次检查并写缓存）');
   out('  yotta-skills doctor --dir <path>    只读自检技能目录（可加 --slug / --json）');
@@ -1144,6 +1314,9 @@ function printHelp() {
   out('  --range          跟随同 major 最新 patch（非默认：显式指定后才浮动跟随）');
   out('  --force          已是最新也重装');
   out('  --skip-scan      跳过元信装前 scan（装了 yotta-verify 自动启用）');
+  out('  --only <a,b>     install / update 只处理指定技能（与位置参数技能列表合并去重）');
+  out('  --domain <name>  install / update 只处理指定家族（security / quality / memory / writing / workflow / entry / compliance / education / distribution）');
+  out('  --installed-only update 只维护目标目录已安装的技能（不补装缺失；无匹配时退出码 0）');
   out('  --npm <path>     指定 npm 可执行文件（默认 npm / npm.cmd）');
   out('  --python <path>  指定 python 可执行文件（元信 scan 用）');
   out('  --verify <path>  指定 yotta_verify.py 路径（默认找目标目录已装的元信）');
@@ -1169,7 +1342,8 @@ function printHelp() {
   out('  -v, --version    版本');
   out('');
   out('支持智能体: ' + Object.keys(AGENT_DIRS).join(', '));
-  out('依赖: Node.js 18+ / npm / 系统 tar；环境变量 YOTTA_SKILLS_NPM / YOTTA_SKILLS_PYTHON / YOTTA_SKILLS_VERIFY / YOTTA_SKILLS_NPM_FLAGS / YOTTA_SKILLS_REGISTRY_FILE 可覆盖。');
+  out('依赖: Node.js 18+（必需）；npm 与系统 tar 为回退通道（内置拉包 / 内置解包为主）；元信 scan 需要 Python 3.8+（--python / YOTTA_SKILLS_PYTHON 可指向宿主自带 Python）。');
+  out('环境变量: YOTTA_SKILLS_FETCH（builtin|npm）/ YOTTA_SKILLS_EXTRACT（builtin|tar）/ YOTTA_SKILLS_NPM / YOTTA_SKILLS_PYTHON / YOTTA_SKILLS_VERIFY / YOTTA_SKILLS_NPM_FLAGS / YOTTA_SKILLS_REGISTRY / YOTTA_SKILLS_REGISTRY_FILE / YOTTA_SKILLS_MANIFEST 可覆盖。');
 }
 
 
@@ -1628,6 +1802,11 @@ function runHook(opts) {
 
 // ── main ───────────────────────────────────────────────────────────────────
 function main() {
+  const node = depsLib.nodeCheck();
+  if (!node.ok) {
+    die('需要 Node 18+（用途：运行元阁 CLI 本体；当前 v' + node.version + '）', 4,
+      depsLib.fixFor('node') + '；装好后重跑：' + currentCommand());
+  }
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) { printHelp(); return; }
   if (opts.version) { out('yotta-skills v' + VERSION); return; }
@@ -1660,7 +1839,17 @@ function main() {
   }
 
   if (opts.dryRun) {
-    const skills = selectSkills(opts);
+    let skills = selectSkills(opts);
+    if (command === 'update' && opts.installedOnly && dest) {
+      skills = skills.filter((s) => readInstalledVersion(path.join(dest, s.slug)) !== null);
+    }
+    if (skills.length === 0) {
+      out(opts.installedOnly
+        ? 'dry-run：目标目录没有可维护的已安装家族技能（无动作）。'
+        : 'dry-run：过滤后没有匹配的技能（--only / --domain）。');
+      process.exitCode = opts.installedOnly ? 0 : 2;
+      return;
+    }
     out('yotta-skills（元阁）v' + VERSION + ' —— dry-run（' + command + '，' + skills.length + ' 个技能）');
     out('目标: ' + (dest || '未指定（将检测项目级目录）'));
     out('版本策略: ' + (opts.pin ? 'pin（锁死）' : 'range（' + skillRange(skills[0]) + '）'));

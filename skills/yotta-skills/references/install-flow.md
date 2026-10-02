@@ -8,9 +8,11 @@
 对每个待装技能：
 
 1. 读清单（`skills.json`，默认随包；`YOTTA_SKILLS_MANIFEST` 可覆盖）；
-2. `npm pack <pkg>@<spec> --pack-destination <临时目录>`（默认源返回 404 时自动改用官方源重试一次，
-   证据记 `npm_registry_fallback`）；
-3. 系统 `tar -xzf` 解压到临时目录（产物应有 `SKILL.md`）；
+2. 拉包：默认**内置通道**（Node 内置 https 直连 registry：abbreviated packument → 解析版本 → tarball
+   下载 + `integrity`(sha512) / `shasum`(sha1) fail-closed 校验），失败回退 `npm pack`
+   （默认源 404 时自动改用官方源重试一次，证据记 `npm_registry_fallback`）；通道记 `fetch_channel`；
+3. 解包：默认**内置通道**（Node 内置 zlib + tar 解析：ustar / pax / GNU 长名；路径安全与链接条目
+   fail-closed），失败回退系统 `tar -xzf`；通道记 `extract_channel`；产物应有 `SKILL.md`；
 4. 读取包内 `skill-manifest.json`；没有 manifest 时使用 `skills.json` 的家族默认契约；
 5. 校验 slug / package / version / 权限 / 生命周期脚本路径；
 6. 元信装前扫描：已有元信则直接扫描；没有则在本次已获用户确认的安装动作内自举元信自身，再扫描；
@@ -27,6 +29,20 @@
 
 因此装进技能目录的是「技能本体」（SKILL.md / references / scripts 等），不含 npm
 安装器自身、测试夹具与 Python 字节码缓存。
+
+## 依赖与回退链
+
+| 依赖 | 角色 | 缺失时 |
+|---|---|---|
+| Node.js 18+ | 必需（CLI 本体） | 明确提示 + 按平台给安装命令 |
+| npm | 拉包回退通道（`YOTTA_SKILLS_NPM_FLAGS` / `--npm` 仍生效） | 不影响：内置拉包为主 |
+| 系统 tar | 解包回退通道 | 不影响：内置解包为主 |
+| Python 3.8+ | 元信装前扫描 | 门禁阻断（exitCode 5）；优先 `--python` / `YOTTA_SKILLS_PYTHON` 指向宿主自带 Python，或 `--skip-scan` 应急 |
+
+- 通道可用 `YOTTA_SKILLS_FETCH=builtin|npm` / `YOTTA_SKILLS_EXTRACT=builtin|tar` 强制；
+  强制单一通道失败时不回退，并给出明确报错；
+- 缺依赖时按需输出「需要什么 / 为什么 / 一条修复命令 / 不影响使用」，不常驻提醒；
+- `doctor` 新增依赖自检块（text + `--json` 的 `dependencies` 字段），只告警不失败、不改变退出码。
 
 ## manifest 与家族默认契约
 
@@ -63,6 +79,21 @@
 - 与清单 `version` 一致 → 跳过（幂等：第二次安装 27 个全部跳过）；
 - `--force` 强制重装；`update` 对「缺失 / 版本不一致」的技能重装。
 
+## 范围控制（接多少管多少）
+
+| 用法 | 范围 |
+|---|---|
+| `install`（无旗标） | 全量清单全部安装 |
+| `update`（无旗标） | 补齐缺失 + 升级已装（现状语义不变） |
+| `update --installed-only` | 只维护目标目录已安装的家族技能（不补装缺失；无匹配时退出码 0） |
+| `--only <a,b>` / `--domain <name>` | 只处理指定技能 / 家族；与 `--installed-only` 取交集 |
+| `update --check` / `--auto` | 只检查 / 维护已装技能，不补装缺失 |
+
+接管语义：接管范围 = 目标机器**已安装**的元技能（扫描目标目录得出），
+`skills.json` 只作身份 / 版本参照、不决定安装范围；宿主未装的技能一律不动作（不新增、不报错）；
+已管理且已最新 → 跳过（退出码 0）；非家族 / 未收录目录 → 忽略不报错。
+标准配方：`yotta-skills update --installed-only --dir <技能目录>`。
+
 ## 版本策略
 
 - 默认 pin：spec = `<pkg>@<清单精确版本>`，完全可复现，不跟随浮动版本；
@@ -80,6 +111,7 @@
 
 - 引擎查找：`--verify` → `YOTTA_SKILLS_VERIFY` → `<dest>/yotta-verify/scripts/yotta_verify.py`；
 - python 查找：`--python` → `YOTTA_SKILLS_PYTHON` → `python3` / `python` / `py`（win32）；
+  缺 Python 时输出统一人话提示（含「修复」与「不影响使用」，可指向宿主自带 Python 或 `--skip-scan` 应急）；
 - 执行：`python -B <engine> scan <解压目录> --json`（`-B` 禁止写 `__pycache__`，防止污染
   引擎所在目录）；
 - 元信缺失时：先按 `skills.json` 安装 `yotta-verify`，并记录 `gate_mode=trusted-bootstrap`
@@ -157,7 +189,8 @@ doctor 只读检查目录、`SKILL.md`、版本、manifest 身份、注册表记
 ```
 
 记录包含时间、事件、技能、包名、版本、`gate_mode`、verdict、decision
-和快照路径；不记录技能内容或用户数据，只写本机。
+、`fetch_channel`（builtin / npm）、`extract_channel`（builtin / tar）和快照路径；
+不记录技能内容或用户数据，只写本机。
 
 ## 退出码
 
