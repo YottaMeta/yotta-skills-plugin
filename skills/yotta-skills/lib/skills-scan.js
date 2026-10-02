@@ -170,7 +170,7 @@ function opencodeUserDir() {
   return agentDirs.resolveUserDir('.config/opencode/skills', { homeDir: os.homedir(), env: process.env });
 }
 
-/** OpenClaw / QClaw 用户级技能目录：$OPENCLAW_STATE_DIR/skills（默认 ~/.openclaw/skills）。 */
+/** OpenClaw 用户级技能目录：$OPENCLAW_STATE_DIR/skills（默认 ~/.openclaw/skills）。 */
 function openclawUserDir() {
   return agentDirs.resolveUserDir('.openclaw/skills', { homeDir: os.homedir(), env: process.env });
 }

@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="yotta-view-token" content="__YOTTA_VIEW_TOKEN__">
+<link rel="icon" href="data:,">
+<title>元阁 · 技能枢纽</title>
+<style>
+  :root{--bg:#0d1114;--bg2:#12171b;--panel:#171d22;--panel2:#1d242a;--line:rgba(148,190,170,.14);--line2:rgba(148,190,170,.28);
+    --text:#e9efe9;--muted:#9aa8a0;--faint:#6d7b74;--acc:#5fbf8f;--acc-ink:#0d1a13;--warn:#e0b263;--danger:#e07a7a;--info:#8fb4de;
+    --shadow:0 10px 28px rgba(0,0,0,.35)}
+  body.light{--bg:#f2f5f1;--bg2:#e9efea;--panel:#ffffff;--panel2:#f6f9f5;--line:rgba(24,58,44,.12);--line2:rgba(24,58,44,.24);
+    --text:#17211c;--muted:#5c6b63;--faint:#86958c;--acc:#2f7d59;--acc-ink:#ffffff;--warn:#9a6a14;--danger:#b23c3c;--info:#3c6ea5;
+    --shadow:0 8px 22px rgba(24,58,44,.08)}
+  *{box-sizing:border-box}[hidden]{display:none!important}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font:14px/1.6 "Microsoft YaHei","PingFang SC","Noto Sans CJK SC",system-ui,sans-serif;letter-spacing:0}
+  button{font:inherit;color:inherit;cursor:pointer}
+  input,textarea{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line2);border-radius:6px;padding:8px 11px;outline:0;width:100%}
+  input:focus,textarea:focus{border-color:var(--acc)}
+  textarea{min-height:76px;resize:vertical}
+  code,kbd{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:12px}
+  .sv{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+  .shell{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
+  .sidebar{background:var(--bg2);border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:20px;position:sticky;top:0;height:100vh;min-width:0}
+  .brand{display:flex;align-items:center;gap:10px;padding:0 6px}
+  .brand-mark{width:34px;height:34px;border-radius:8px;background:rgba(95,191,143,.14);border:1px solid var(--line2);display:grid;place-items:center;color:var(--acc)}
+  .brand-name{font-size:15px;font-weight:600}
+  .brand-sub{font-size:11px;color:var(--faint)}
+  .nav{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .nav button{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--muted);text-align:left}
+  .nav button:hover{background:var(--panel);color:var(--text)}
+  .nav button.active{background:var(--panel);color:var(--acc);border-color:var(--line)}
+  .side-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;min-width:0}
+  .privacy{display:flex;gap:8px;align-items:flex-start;padding:10px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;background:var(--panel)}
+  .privacy .sv{color:var(--acc);margin-top:2px}
+  .ghost-btn{display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:6px;padding:8px}
+  .ghost-btn:hover{color:var(--text);border-color:var(--line2)}
+  .verline{padding:0 6px;color:var(--faint);font-size:11px}
+
+  .main{min-width:0;padding:24px 28px 70px}
+  .topbar{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+  .page-title{font-size:19px;font-weight:600;margin:0}
+  .page-sub{color:var(--faint);font-size:12px;margin-top:2px}
+  .spacer{flex:1}
+  .chip{display:flex;align-items:center;gap:7px;padding:5px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:12px;white-space:nowrap}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--acc)}
+
+  .view{display:none}.view.active{display:block}
+  .grid{display:grid;gap:12px}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:15px;min-width:0}
+  .panel h3{margin:0 0 4px;font-size:14px}
+  .section{margin-top:16px}
+  .shead{display:flex;align-items:baseline;gap:10px;margin-bottom:9px;flex-wrap:wrap}
+  .shead h2{font-size:14px;margin:0}
+  .label{color:var(--muted);font-size:12px}
+  .value{font-size:25px;font-weight:600;margin:7px 0 2px}
+  .delta{font-size:12px;color:var(--muted)}
+  .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all}
+
+  .toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .search{display:flex;align-items:center;gap:8px;min-width:230px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 11px;color:var(--muted)}
+  .search input{background:transparent;border:0;padding:0;width:100%}
+  .btn{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:6px;border:1px solid var(--line2);background:transparent;color:var(--text);white-space:nowrap}
+  .btn:hover{border-color:var(--acc)}
+  .btn.primary{background:var(--acc);border-color:var(--acc);color:var(--acc-ink);font-weight:600}
+  .btn.danger{border-color:rgba(224,122,122,.5);color:var(--danger)}
+  .btn.small{padding:4px 9px;font-size:12px}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+  .ibtn{width:29px;height:29px;display:grid;place-items:center;border:1px solid var(--line);background:transparent;border-radius:6px;color:var(--muted)}
+  .ibtn:hover{color:var(--text);border-color:var(--line2)}
+
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:10px 9px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}
+  th{color:var(--faint);font-weight:500;font-size:12px}
+  tbody tr:hover{background:var(--panel2)}
+  .cell-main{font-weight:600}
+  .cell-sub{color:var(--faint);font-size:11px;word-break:break-all}
+
+  .list{display:flex;flex-direction:column;gap:7px;margin-top:12px}
+  .row{display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);min-width:0}
+  .row-main{flex:1;min-width:0}
+  .row-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row-meta{color:var(--faint);font-size:11px;margin-top:2px;word-break:break-all}
+  .row-actions{display:flex;gap:6px;flex-wrap:wrap}
+  .empty{color:var(--faint);text-align:center;padding:22px;border:1px dashed var(--line);border-radius:8px;margin-top:12px}
+
+  .badge{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);background:transparent;white-space:nowrap}
+  .badge.ok{color:var(--acc);border-color:rgba(95,191,143,.45);background:rgba(95,191,143,.10)}
+  .badge.warn{color:var(--warn);border-color:rgba(224,178,99,.45);background:rgba(224,178,99,.10)}
+  .badge.danger{color:var(--danger);border-color:rgba(224,122,122,.45);background:rgba(224,122,122,.10)}
+  .badge.info{color:var(--info);border-color:rgba(143,180,222,.45);background:rgba(143,180,222,.10)}
+  .dot-mark{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;background:var(--faint)}
+  .dot-mark.ok{background:var(--acc)}.dot-mark.warn{background:var(--warn)}.dot-mark.danger{background:var(--danger)}
+
+  .banner{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line2);border-radius:8px;background:var(--panel2)}
+  .banner.ok{border-color:rgba(95,191,143,.45)}
+  .banner.danger{border-color:rgba(224,122,122,.45)}
+  .banner .sv{margin-top:2px;color:var(--acc)}
+  .banner.danger .sv{color:var(--danger)}
+  .banner-title{font-weight:600}
+  .banner-body{color:var(--muted);font-size:12px;margin-top:2px}
+
+  .kv{display:grid;grid-template-columns:96px 1fr;gap:5px 10px;font-size:13px;margin:10px 0}
+  .kv dt{color:var(--faint)}.kv dd{margin:0;word-break:break-all}
+  .variants{border-top:1px dashed var(--line);margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:5px}
+  .variant{display:flex;gap:9px;align-items:baseline;font-size:12px;color:var(--muted);flex-wrap:wrap}
+  .check{width:16px;height:16px;flex:none;accent-color:var(--acc)}
+  details summary{cursor:pointer;color:var(--muted);font-size:12px}
+
+  .actionbar{position:sticky;bottom:0;margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:11px 13px;border:1px solid var(--line2);border-radius:8px;background:var(--bg2);box-shadow:var(--shadow)}
+  .result-list{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+  .result{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:12px}
+
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.52);display:none;place-items:center;z-index:50;padding:18px}
+  .mask.open{display:grid}
+  .modal{width:min(600px,100%);max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:18px;box-shadow:var(--shadow)}
+  .modal h3{margin:0 0 10px;font-size:16px}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+  .toasts{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);display:flex;flex-direction:column;gap:7px;align-items:center;z-index:60}
+  .toast{background:var(--panel2);border:1px solid var(--line2);border-radius:999px;padding:8px 15px;box-shadow:var(--shadow);font-size:13px}
+
+  .cmd-group{margin-top:14px}
+  .cmd{display:flex;gap:10px;align-items:center;padding:9px 11px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);margin-top:6px}
+  .cmd code{flex:1;min-width:0;word-break:break-all;color:var(--text)}
+  .cmd .why{color:var(--faint);font-size:11px}
+  .note{color:var(--muted);font-size:12px;margin-top:8px}
+
+  @media (max-width:980px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:760px){
+    .shell{grid-template-columns:minmax(0,1fr)}
+    .sidebar{position:static;height:auto;padding:13px;gap:11px}
+    .nav{flex-direction:row;overflow-x:auto;width:100%;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+    .nav::-webkit-scrollbar{display:none}
+    .nav button{white-space:nowrap;padding:7px 9px}
+    .side-foot{margin-top:0;flex-direction:row;align-items:center}
+    .privacy{display:none}
+    .ghost-btn{flex:1;white-space:nowrap}
+    .verline{white-space:nowrap;text-align:right}
+    .main{padding:16px 14px 56px}
+    .g4,.g2{grid-template-columns:minmax(0,1fr)}
+    .search{min-width:100%}
+    table{display:block;overflow-x:auto;white-space:nowrap}
+    .row{flex-wrap:wrap}
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"><svg class="sv" viewBox="0 0 24 24"><path d="M12 3 4 7v4c0 4.4 3.4 8.4 8 10 4.6-1.6 8-5.6 8-10V7z"/><path d="M9 12l2 2 4-4"/></svg></div>
+      <div><div class="brand-name">元阁 · 技能枢纽</div><div class="brand-sub">Hub 本地面板</div></div>
+    </div>
+    <nav class="nav" id="nav">
+      <button data-view="overview" class="active"><svg class="sv" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>概览</button>
+      <button data-view="hosts"><svg class="sv" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>宿主矩阵</button>
+      <button data-view="adopt"><svg class="sv" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/></svg>收编向导</button>
+      <button data-view="links"><svg class="sv" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1L11 4.9"/><path d="M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20.1l1-1"/></svg>链接与体检</button>
+      <button data-view="records"><svg class="sv" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v5l3 2"/></svg>记录与回滚</button>
+      <button data-view="route"><svg class="sv" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 6H15a3 3 0 0 1 0 6h-6a3 3 0 0 0 0 6h6.5"/></svg>路由与编排</button>
+      <button data-view="cli"><svg class="sv" viewBox="0 0 24 24"><path d="m4 7 5 5-5 5"/><path d="M12 19h8"/></svg>高级 CLI</button>
+    </nav>
+    <div class="side-foot">
+      <div class="privacy"><svg class="sv" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span>本机运行 · 零远程<br>写操作需页面令牌与确认</span></div>
+      <button class="ghost-btn" id="themeBtn"><svg class="sv" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>切换主题</button>
+      <div class="verline" id="verLine"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div><h1 class="page-title" id="pageTitle">概览</h1><div class="page-sub" id="pageSub">Hub 里有什么、健康吗、最近做了什么</div></div>
+      <div class="spacer"></div>
+      <button class="btn" id="refreshBtn"><svg class="sv" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>刷新</button>
+      <div class="chip"><span class="dot"></span>本机 · 127.0.0.1</div>
+    </div>
+
+    <section class="view active" id="view-overview">
+      <div class="grid g4" id="ovCards"></div>
+      <div class="section" id="ovDoctor"></div>
+      <div class="section grid g2">
+        <div class="panel"><h3>Hub 内容</h3><div class="faint">技能真源在 Hub 目录，宿主目录通过链接分发。</div><div class="list" id="ovSkills"></div></div>
+        <div class="panel"><h3>最近动作</h3><div class="faint">收编 / 链接 / 解除都写入 Hub 审计。</div><div class="list" id="ovAudit"></div></div>
+      </div>
+      <div class="section panel">
+        <h3>Hub 位置</h3>
+        <div class="mono" id="ovHubDir">-</div>
+        <div class="toolbar section">
+          <button class="btn small" data-goto="adopt">去收编</button>
+          <button class="btn small" data-goto="links">去链接与体检</button>
+          <button class="btn small" data-goto="records">查看记录</button>
+          <button class="btn small" id="copyHubDir">复制路径</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-hosts">
+      <div class="toolbar">
+        <label class="search"><svg class="sv" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="hostSearch" placeholder="过滤宿主 / 目录"></label>
+        <span class="label" id="hostSummary"></span>
+      </div>
+      <div class="section panel">
+        <table><thead><tr><th>宿主</th><th>技能目录</th><th>目录技能</th><th>指向 Hub</th><th>异常</th><th>状态</th></tr></thead><tbody id="hostRows"></tbody></table>
+        <div class="empty" id="hostEmpty" hidden>没有匹配的宿主目录。</div>
+      </div>
+      <div class="section panel"><h3>已安装标记（无技能目录的宿主）</h3><div class="list" id="hostMarks"></div></div>
+    </section>
+
+    <section class="view" id="view-adopt">
+      <div class="grid g4" id="adoptCards"></div>
+      <div class="section toolbar">
+        <label class="search"><svg class="sv" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="adoptSearch" placeholder="过滤技能 slug / 来源宿主"></label>
+        <button class="btn small" id="adoptAll">全选可收编</button>
+        <button class="btn small" id="adoptNone">清空</button>
+        <span class="spacer"></span>
+        <span class="label" id="adoptScanInfo"></span>
+      </div>
+      <div class="list" id="adoptList"></div>
+      <div class="empty" id="adoptEmpty" hidden>没有可收编的候选。先在宿主里安装技能，或刷新宿主矩阵。</div>
+      <div class="actionbar">
+        <span class="label">已选 <b id="adoptCount">0</b> 项</span>
+        <span class="spacer"></span>
+        <span class="faint">默认复制保真、原目录保留；冲突项默认跳过；执行时逐项运行元信扫描。</span>
+        <button class="btn primary" id="adoptApply">收编所选</button>
+      </div>
+      <div class="section panel" id="adoptResultsWrap" hidden><h3>收编结果</h3><div class="result-list" id="adoptResults"></div></div>
+    </section>
+
+    <section class="view" id="view-links">
+      <div id="linkDoctor"></div>
+      <div class="section panel">
+        <h3>分发目标</h3>
+        <div class="faint">把 Hub 技能链接到宿主目录（Windows junction / POSIX symlink）；同名真目录默认跳过，不做静默覆盖。</div>
+        <div class="list" id="linkTargets"></div>
+      </div>
+      <div class="section panel">
+        <h3>当前链接</h3>
+        <table><thead><tr><th>技能</th><th>宿主</th><th>目标</th><th>状态</th><th></th></tr></thead><tbody id="linkRows"></tbody></table>
+        <div class="empty" id="linkEmpty" hidden>还没有任何链接。</div>
+      </div>
+    </section>
+
+    <section class="view" id="view-records">
+      <div class="toolbar">
+        <button class="btn small" data-tab="snapshots">回滚快照</button>
+        <button class="btn small" data-tab="evidence">安装 / 回滚证据</button>
+        <button class="btn small" data-tab="audit">Hub 审计</button>
+        <span class="spacer"></span>
+        <span class="label" id="recordsInfo"></span>
+      </div>
+      <div class="section panel" id="recSnapshots">
+        <table><thead><tr><th>技能</th><th>版本</th><th>时间</th><th>来源目录</th><th>状态</th><th></th></tr></thead><tbody id="snapshotRows"></tbody></table>
+        <div class="empty" id="snapshotEmpty" hidden>没有安装快照。快照由 install / update 写入。</div>
+      </div>
+      <div class="section panel" id="recEvidence" hidden>
+        <div class="list" id="evidenceRows"></div>
+        <div class="empty" id="evidenceEmpty" hidden>没有证据记录。</div>
+      </div>
+      <div class="section panel" id="recAudit" hidden>
+        <div class="list" id="auditRows"></div>
+        <div class="empty" id="auditEmpty" hidden>没有 Hub 审计记录。</div>
+      </div>
+    </section>
+
+    <section class="view" id="view-route">
+      <div class="panel">
+        <h3>一句话需求 → 技能组合</h3>
+        <div class="faint">只读调用静态 playbook（7 组）+ 动态路由块；安装建议只给命令，不在网页执行。</div>
+        <div class="toolbar section">
+          <label class="search" style="flex:1"><svg class="sv" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="routeInput" placeholder="例如：帮我做发布前质量检查"></label>
+          <button class="btn primary" id="routeBtn">给出组合</button>
+        </div>
+      </div>
+      <div id="routeResult" class="section"></div>
+    </section>
+
+    <section class="view" id="view-cli">
+      <div class="banner">
+        <svg class="sv" viewBox="0 0 24 24"><path d="m4 7 5 5-5 5"/><path d="M12 19h8"/></svg>
+        <div><div class="banner-title">高级 CLI</div><div class="banner-body">低频 / 长尾命令在这里复制到终端执行；网页不代替终端运行安装与更新。</div></div>
+      </div>
+      <div id="cliGroups"></div>
+    </section>
+  </main>
+</div>
+
+<div class="mask" id="mask"><div class="modal" id="modal"></div></div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+(function () {
+  var TOKEN = (document.querySelector('meta[name="yotta-view-token"]') || {}).content || '';
+  var state = { view: 'overview', overview: null, hosts: null, adopt: null, selected: {}, records: null, tab: 'snapshots', hostFilter: '', adoptFilter: '' };
+
+  function $(sel) { return document.querySelector(sel); }
+  function esc(value) {
+    return String(value === null || value === undefined ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function fmtTime(value) {
+    var ms = typeof value === 'number' ? value : Date.parse(value);
+    if (!ms || isNaN(ms)) return value ? String(value) : '-';
+    var d = new Date(ms);
+    function p(n) { return n < 10 ? '0' + n : '' + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+  function toast(text) {
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = text;
+    $('#toasts').appendChild(el);
+    setTimeout(function () { el.remove(); }, 3200);
+  }
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast('已复制'); }, function () { fallbackCopy(text); });
+    } else fallbackCopy(text);
+  }
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('已复制'); } catch (e) { toast('复制失败，请手动选择'); }
+    ta.remove();
+  }
+  async function api(path, opts) {
+    opts = opts || {};
+    var init = { method: opts.method || 'GET', headers: {} };
+    if (opts.body !== undefined) {
+      init.method = 'POST';
+      init.headers['Content-Type'] = 'application/json';
+      init.headers['X-Yotta-View-Token'] = TOKEN;
+      init.body = JSON.stringify(opts.body);
+    }
+    var res, data = null;
+    try { res = await fetch(path, init); } catch (e) { return { error: '无法连接本地服务：' + e.message }; }
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok) return data && data.error ? data : { error: '请求失败（HTTP ' + res.status + '）' };
+    if (!data) return { error: '响应不是合法 JSON' };
+    return data;
+  }
+
+  function openModal(title, bodyHtml, opts) {
+    opts = opts || {};
+    var html = '<h3>' + esc(title) + '</h3><div id="modalBody">' + bodyHtml + '</div>' +
+      '<div class="modal-actions"><button class="btn" data-modal="cancel">' + esc(opts.cancelText || '取消') + '</button>' +
+      (opts.okText === null ? '' : '<button class="btn ' + (opts.danger ? 'danger' : 'primary') + '" data-modal="ok">' + esc(opts.okText || '确认') + '</button>') +
+      '</div>';
+    $('#modal').innerHTML = html;
+    $('#mask').classList.add('open');
+    var ok = $('#modal').querySelector('[data-modal="ok"]');
+    $('#modal').querySelector('[data-modal="cancel"]').onclick = closeModal;
+    if (ok && opts.onOk) {
+      ok.onclick = async function () {
+        ok.disabled = true;
+        try { await opts.onOk(); } finally { ok.disabled = false; }
+      };
+    }
+  }
+  function closeModal() { $('#mask').classList.remove('open'); $('#modal').innerHTML = ''; }
+  function confirmModal(title, bodyHtml, okText, danger, onOk) {
+    openModal(title, bodyHtml, { okText: okText, danger: danger, onOk: onOk });
+  }
+  $('#mask').addEventListener('click', function (e) { if (e.target === $('#mask')) closeModal(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+
+  var VIEWS = {
+    overview: { title: '概览', sub: 'Hub 里有什么、健康吗、最近做了什么', load: loadOverview },
+    hosts: { title: '宿主矩阵', sub: '装了哪些宿主、技能目录在哪、Hub 技能链到了谁', load: loadHosts },
+    adopt: { title: '收编向导', sub: '有哪些可收编、哪些是重复副本、收编后会发生什么', load: loadAdopt },
+    links: { title: '链接与体检', sub: '断链 / 漂移 / 目标缺失在哪、怎么修', load: loadLinks },
+    records: { title: '记录与回滚', sub: '安装、收编、链接都做了什么，怎么退回', load: loadRecords },
+    route: { title: '路由与编排', sub: '一句话需求该用哪些技能、缺什么（只读）', load: null },
+    cli: { title: '高级 CLI', sub: '低频命令速查与复制', load: null }
+  };
+  function switchView(name) {
+    if (!VIEWS[name]) return;
+    state.view = name;
+    Array.prototype.forEach.call(document.querySelectorAll('#nav button'), function (b) { b.classList.toggle('active', b.dataset.view === name); });
+    Array.prototype.forEach.call(document.querySelectorAll('.view'), function (v) { v.classList.toggle('active', v.id === 'view-' + name); });
+    $('#pageTitle').textContent = VIEWS[name].title;
+    $('#pageSub').textContent = VIEWS[name].sub;
+    if (VIEWS[name].load) VIEWS[name].load();
+  }
+  $('#nav').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-view]');
+    if (b) switchView(b.dataset.view);
+  });
+  document.addEventListener('click', function (e) {
+    var g = e.target.closest('[data-goto]');
+    if (g) switchView(g.dataset.goto);
+  });
+  $('#refreshBtn').onclick = function () { var v = VIEWS[state.view]; if (v && v.load) v.load(); else toast('已刷新'); };
+  $('#themeBtn').onclick = function () {
+    document.body.classList.toggle('light');
+    try { localStorage.setItem('yotta-hub-theme', document.body.classList.contains('light') ? 'light' : 'dark'); } catch (e) {}
+  };
+  try { if (localStorage.getItem('yotta-hub-theme') === 'light') document.body.classList.add('light'); } catch (e) {}
+
+  function statCard(label, value, delta, tone) {
+    return '<div class="panel"><div class="label">' + esc(label) + '</div><div class="value">' + esc(value) + '</div><div class="delta ' + (tone ? 'badge ' + tone : '') + '">' + esc(delta) + '</div></div>';
+  }
+  function doctorBanner(doctor) {
+    if (!doctor) return '';
+    if (doctor.ok) {
+      return '<div class="banner ok"><svg class="sv" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><div><div class="banner-title">体检通过</div><div class="banner-body">警告 ' + doctor.summary.warnings + ' / 信息 ' + doctor.summary.info + '；结构性错误 0。</div></div></div>';
+    }
+    var bad = (doctor.checks || []).filter(function (c) { return !c.ok; }).slice(0, 6).map(function (c) {
+      return '<div class="result"><span class="badge ' + (c.severity === 'error' ? 'danger' : 'warn') + '">' + esc(c.severity === 'error' ? '错误' : '警告') + '</span><span>' + esc(c.message) + '</span>' + (c.hint ? '<span class="faint">修复：' + esc(c.hint) + '</span>' : '') + '</div>';
+    }).join('');
+    return '<div class="banner danger"><svg class="sv" viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><div style="flex:1"><div class="banner-title">体检未通过（错误 ' + doctor.summary.errors + ' / 警告 ' + doctor.summary.warnings + '）</div><div class="result-list">' + bad + '</div></div></div>';
+  }
+
+  async function loadOverview() {
+    var d = await api('/api/overview');
+    if (d.error) { toast(d.error); return; }
+    state.overview = d;
+    $('#ovCards').innerHTML =
+      statCard('Hub 技能', d.status.summary.skills, '外部来源 ' + d.status.summary.external, '') +
+      statCard('已链接', d.status.summary.links, '宿主目录投影', 'ok') +
+      statCard('异常链接', d.status.summary.brokenLinks, d.status.summary.brokenLinks ? '需要处理' : '全部正常', d.status.summary.brokenLinks ? 'danger' : 'ok') +
+      statCard('Doctor', d.doctor.ok ? '通过' : '未通过', '错误 ' + d.doctor.summary.errors + ' / 警告 ' + d.doctor.summary.warnings, d.doctor.ok ? 'ok' : 'danger');
+    $('#ovDoctor').innerHTML = doctorBanner(d.doctor);
+    var skills = d.status.skills || [];
+    $('#ovSkills').innerHTML = skills.length ? skills.slice(0, 8).map(function (s) {
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(s.slug) + '</div><div class="row-meta">v' + esc(s.version || '-') + ' · ' + esc(s.origin === 'external' ? '外部来源' : '元阁家族') + ' · 链接 ' + (s.links || []).length + '</div></div><span class="badge ' + (s.status === 'present' ? 'ok' : 'danger') + '">' + esc(s.status === 'present' ? '已入库' : '缺失') + '</span></div>';
+    }).join('') : '<div class="empty">Hub 还是空的。先在「收编向导」把已装技能收编进来。</div>';
+    var audit = (d.audit && d.audit.recent) || [];
+    $('#ovAudit').innerHTML = audit.length ? audit.slice().reverse().map(function (a) {
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(a.event || '动作') + ' · ' + esc(a.slug || '') + '</div><div class="row-meta">' + esc(fmtTime(a.at)) + (a.verdict ? ' · ' + esc(a.verdict) : '') + '</div></div></div>';
+    }).join('') : '<div class="empty">还没有动作记录。</div>';
+    $('#ovHubDir').textContent = d.hubDir;
+    $('#copyHubDir').onclick = function () { copyText(d.hubDir); };
+  }
+
+  async function loadHosts() {
+    var d = await api('/api/hosts');
+    if (d.error) { toast(d.error); return; }
+    state.hosts = d;
+    $('#hostSummary').textContent = '目录 ' + d.summary.existing + ' / ' + d.summary.hosts + ' · 已装标记 ' + d.summary.installedMarks + ' · 链接 ' + d.summary.links;
+    renderHosts();
+    var marks = d.installed || [];
+    $('#hostMarks').innerHTML = marks.length ? marks.map(function (m) {
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(m.label) + '</div><div class="row-meta">' + esc(m.source || '') + (m.hasSkillsDir ? ' · 技能目录：' + esc(m.skillDir || '') : ' · 未发现技能目录') + '</div></div><span class="badge ' + (m.hasSkillsDir ? 'ok' : 'info') + '">' + esc(m.hasSkillsDir ? '可链接' : '仅标记') + '</span></div>';
+    }).join('') : '<div class="empty">没有检测到额外宿主标记。</div>';
+  }
+  function renderHosts() {
+    var d = state.hosts; if (!d) return;
+    var q = state.hostFilter.toLowerCase();
+    var rows = (d.hosts || []).filter(function (h) {
+      if (!q) return true;
+      return String(h.label || '').toLowerCase().includes(q) || String(h.dir || '').toLowerCase().includes(q);
+    });
+    $('#hostEmpty').hidden = rows.length > 0;
+    $('#hostRows').innerHTML = rows.map(function (h) {
+      var status = !h.exists ? '<span class="badge">未创建</span>' : (h.brokenLinks ? '<span class="badge danger">有异常</span>' : '<span class="badge ok">可用</span>');
+      return '<tr><td><div class="cell-main">' + esc(h.label) + '</div><div class="cell-sub">' + esc(h.agentId || (h.known ? '已知宿主' : h.detection || '自动发现')) + '</div></td>' +
+        '<td><div class="mono">' + esc(h.dir) + '</div><button class="btn small" data-copy="' + esc(h.dir) + '">复制</button></td>' +
+        '<td>' + esc(h.skillCount || 0) + '</td><td>' + esc(h.hubLinks || 0) + '</td><td>' + esc(h.brokenLinks || 0) + '</td><td>' + status + '</td></tr>';
+    }).join('');
+  }
+  $('#hostSearch').addEventListener('input', function (e) { state.hostFilter = e.target.value; renderHosts(); });
+  $('#hostRows').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-copy]');
+    if (b) copyText(b.dataset.copy);
+  });
+
+  async function loadAdopt() {
+    var d = await api('/api/adopt/scan');
+    if (d.error) { toast(d.error); return; }
+    state.adopt = d;
+    state.selected = {};
+    $('#adoptCards').innerHTML =
+      statCard('候选技能', d.summary.candidates, '已装宿主里的技能', '') +
+      statCard('多副本冲突', d.summary.conflicts, '版本 / 哈希不一致', d.summary.conflicts ? 'warn' : 'ok') +
+      statCard('已在 Hub', d.summary.alreadyInHub, '默认跳过', 'info') +
+      statCard('扫描引擎', d.scan && d.scan.available ? '可用' : '未找到', d.scan && d.scan.available ? '收编时逐项扫描' : '可显式降级（CLI）', d.scan && d.scan.available ? 'ok' : 'warn');
+    $('#adoptScanInfo').textContent = '生成于 ' + fmtTime(d.generatedAt);
+    renderAdopt();
+  }
+  function renderAdopt() {
+    var d = state.adopt; if (!d) return;
+    var q = state.adoptFilter.toLowerCase();
+    var candidates = (d.candidates || []).filter(function (c) {
+      if (!q) return true;
+      return String(c.slug || '').toLowerCase().includes(q) || String(c.sourceHost || '').toLowerCase().includes(q);
+    });
+    $('#adoptEmpty').hidden = candidates.length > 0;
+    $('#adoptList').innerHTML = candidates.map(function (c) {
+      var variants = (c.variants || []).map(function (v) {
+        return '<div class="variant"><span class="badge">' + esc(v.host) + '</span><span class="mono">' + esc(v.dir) + '</span><span>v' + esc(v.version || '-') + '</span></div>';
+      }).join('');
+      return '<div class="row"><input class="check" type="checkbox" data-slug="' + esc(c.slug) + '"' + (state.selected[c.slug] ? ' checked' : '') + (c.inHub ? ' disabled' : '') + '>' +
+        '<div class="row-main"><div class="row-title">' + esc(c.slug) + ' <span class="badge">v' + esc(c.version || '-') + '</span>' +
+        (c.inHub ? ' <span class="badge info">已在 Hub</span>' : '') +
+        (c.conflict ? ' <span class="badge warn">多副本冲突</span>' : '') + '</div>' +
+        '<div class="row-meta">来源：' + esc(c.sourceHost || '-') + ' · ' + esc(c.source || '') + '</div>' +
+        (c.variants && c.variants.length > 1 ? '<details><summary>' + c.variants.length + ' 个副本</summary><div class="variants">' + variants + '</div></details>' : '') +
+        '</div></div>';
+    }).join('');
+    updateAdoptCount();
+  }
+  function updateAdoptCount() {
+    var n = Object.keys(state.selected).filter(function (k) { return state.selected[k]; }).length;
+    $('#adoptCount').textContent = String(n);
+    $('#adoptApply').disabled = n === 0;
+  }
+  $('#adoptSearch').addEventListener('input', function (e) { state.adoptFilter = e.target.value; renderAdopt(); });
+  $('#adoptList').addEventListener('change', function (e) {
+    var box = e.target.closest('input[data-slug]');
+    if (!box) return;
+    if (box.checked) state.selected[box.dataset.slug] = true; else delete state.selected[box.dataset.slug];
+    updateAdoptCount();
+  });
+  $('#adoptAll').onclick = function () {
+    ((state.adopt && state.adopt.candidates) || []).forEach(function (c) { if (!c.inHub) state.selected[c.slug] = true; });
+    renderAdopt();
+  };
+  $('#adoptNone').onclick = function () { state.selected = {}; renderAdopt(); };
+  $('#adoptApply').onclick = function () {
+    var slugs = Object.keys(state.selected).filter(function (k) { return state.selected[k]; });
+    if (!slugs.length) { toast('还没有选择技能'); return; }
+    var preview = slugs.slice(0, 24).join('、') + (slugs.length > 24 ? ' 等 ' + slugs.length + ' 项' : '');
+    confirmModal('收编 ' + slugs.length + ' 个技能到 Hub？', '<p class="label">将复制到 Hub（原目录保留）；已在 Hub 或冲突项按默认策略处理；执行时逐项运行元信扫描，high / critical 会阻断。</p><div class="mono">' + esc(preview) + '</div>', '开始收编', false, async function () {
+      var r = await api('/api/adopt/apply', { body: { include: slugs } });
+      if (r.error) { toast(r.error); return; }
+      closeModal();
+      var order = { imported: 0, blocked: 1, conflict: 2, skip: 3, error: 4 };
+      var results = (r.results || []).slice().sort(function (a, b) { return (order[a.status] || 9) - (order[b.status] || 9); });
+      $('#adoptResultsWrap').hidden = false;
+      $('#adoptResults').innerHTML = results.map(function (x) {
+        var tone = x.status === 'imported' ? 'ok' : x.status === 'error' || x.status === 'blocked' ? 'danger' : 'warn';
+        return '<div class="result"><span class="badge ' + tone + '">' + esc(x.status) + '</span><b>' + esc(x.slug) + '</b><span>' + esc(x.note || '') + '</span>' + (x.scanVerdict ? '<span class="faint">verdict: ' + esc(x.scanVerdict) + '</span>' : '') + '</div>';
+      }).join('');
+      toast('收编完成：导入 ' + (r.summary ? r.summary.imported : 0) + ' / 阻断 ' + (r.summary ? r.summary.blocked : 0));
+      loadOverview();
+      loadAdopt();
+    });
+  };
+
+  async function loadLinks() {
+    var results = await Promise.all([api('/api/doctor'), api('/api/links'), api('/api/hosts')]);
+    var doctor = results[0], links = results[1], hosts = results[2];
+    if (doctor.error || links.error || hosts.error) { toast((doctor.error || links.error || hosts.error)); return; }
+    $('#linkDoctor').innerHTML = doctorBanner(doctor);
+    var existing = (hosts.hosts || []).filter(function (h) { return h.exists; });
+    $('#linkTargets').innerHTML = existing.length ? existing.map(function (h) {
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(h.label) + '</div><div class="row-meta mono">' + esc(h.dir) + '</div><div class="row-meta">目录技能 ' + esc(h.skillCount || 0) + ' · 指向 Hub ' + esc(h.hubLinks || 0) + (h.brokenLinks ? ' · 异常 ' + h.brokenLinks : '') + '</div></div><div class="row-actions"><button class="btn small" data-link-plan="' + esc(h.dir) + '" data-label="' + esc(h.label) + '">预览链接</button></div></div>';
+    }).join('') : '<div class="empty">尚未发现可用的宿主技能目录。</div>';
+    var rows = links.links || [];
+    $('#linkEmpty').hidden = rows.length > 0;
+    $('#linkRows').innerHTML = rows.map(function (l) {
+      var tone = l.status === 'ok' ? 'ok' : l.status === 'broken' ? 'danger' : 'warn';
+      return '<tr><td><div class="cell-main">' + esc(l.slug) + '</div><div class="cell-sub">' + esc(l.label || l.agent || '-') + '</div></td>' +
+        '<td class="mono">' + esc(l.dir) + '</td><td class="mono">' + esc(l.target) + '</td>' +
+        '<td><span class="badge ' + tone + '">' + esc(l.status) + '</span></td>' +
+        '<td><button class="btn small danger" data-unlink="' + esc(l.target) + '" data-dir="' + esc(l.dir) + '" data-slug="' + esc(l.slug) + '">解除</button></td></tr>';
+    }).join('');
+  }
+  $('#linkTargets').addEventListener('click', async function (e) {
+    var b = e.target.closest('[data-link-plan]');
+    if (!b) return;
+    var dir = b.dataset.linkPlan;
+    var plan = await api('/api/links/plan?dir=' + encodeURIComponent(dir));
+    if (plan.error) { toast(plan.error); return; }
+    var would = plan.results.filter(function (r) { return r.status === 'would-link'; });
+    var conflicts = plan.results.filter(function (r) { return r.status === 'conflict'; });
+    var body = '<p class="label">目标：' + esc(plan.label || '') + ' · <span class="mono">' + esc(dir) + '</span></p>' +
+      '<div class="result"><span class="badge ok">将建立</span><b>' + would.length + '</b><span>个链接</span></div>' +
+      (conflicts.length ? '<div class="result"><span class="badge warn">跳过冲突</span><b>' + conflicts.length + '</b><span>个同名目录 / 链接（默认不覆盖）</span></div>' : '') +
+      (would.length ? '<details><summary>查看明细</summary><div class="variants">' + would.map(function (r) { return '<div class="variant"><span class="mono">' + esc(r.slug) + '</span></div>'; }).join('') + '</div></details>' : '<p class="faint">没有可建立的链接。</p>');
+    openModal('链接预览', body, {
+      okText: would.length ? '执行链接' : null,
+      onOk: async function () {
+        var r = await api('/api/links/apply', { body: { targetDir: dir } });
+        if (r.error) { toast(r.error); return; }
+        closeModal();
+        var done = (r.results || []).filter(function (x) { return x.status === 'linked'; }).length;
+        toast('已建立 ' + done + ' 个链接');
+        loadLinks();
+      },
+    });
+  });
+  $('#linkRows').addEventListener('click', async function (e) {
+    var b = e.target.closest('[data-unlink]');
+    if (!b) return;
+    var target = b.dataset.unlink;
+    var dir = b.dataset.dir;
+    var slug = b.dataset.slug;
+    confirmModal('解除链接 ' + slug + '？', '<p class="label">只删除宿主目录中的链接，Hub 真源保留。目标不是指向 Hub 的链接时会 fail-closed 拒绝。</p><div class="mono">' + esc(target) + '</div>', '解除链接', true, async function () {
+      var r = await api('/api/links/remove', { body: { targetDir: dir, slugs: [slug], confirm: 'unlink' } });
+      if (r.error) { toast(r.error); return; }
+      closeModal();
+      toast('已解除 ' + slug);
+      loadLinks();
+    });
+  });
+
+  async function loadRecords() {
+    var d = await api('/api/records?limit=200');
+    if (d.error) { toast(d.error); return; }
+    state.records = d;
+    var valid = (d.snapshots || []).filter(function (s) { return s.valid; }).length;
+    $('#recordsInfo').textContent = '快照 ' + valid + ' / ' + (d.snapshots || []).length + ' · 证据 ' + (d.evidence.entries || []).length + ' · 审计 ' + (d.audit.entries || []).length;
+    renderSnapshots();
+    var ev = (d.evidence.entries || []).slice().reverse();
+    $('#evidenceEmpty').hidden = ev.length > 0;
+    $('#evidenceRows').innerHTML = ev.map(function (x) {
+      var tone = x.decision === 'ok' ? 'ok' : x.decision === 'fail' ? 'danger' : 'info';
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(x.event || 'event') + ' · ' + esc(x.skill || x.slug || '-') + '</div><div class="row-meta">' + esc(fmtTime(x.ts || x.at)) + (x.version ? ' · v' + esc(x.version) : '') + (x.via ? ' · via ' + esc(x.via) : '') + '</div></div><span class="badge ' + tone + '">' + esc(x.decision || '记录') + '</span></div>';
+    }).join('');
+    var aud = (d.audit.entries || []).slice().reverse();
+    $('#auditEmpty').hidden = aud.length > 0;
+    $('#auditRows').innerHTML = aud.map(function (x) {
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(x.event || 'audit') + ' · ' + esc(x.slug || '') + '</div><div class="row-meta">' + esc(fmtTime(x.at)) + (x.verdict ? ' · ' + esc(x.verdict) : '') + (x.sourceHost ? ' · ' + esc(x.sourceHost) : '') + '</div></div></div>';
+    }).join('');
+  }
+  function renderSnapshots() {
+    var d = state.records; if (!d) return;
+    var rows = d.snapshots || [];
+    $('#snapshotEmpty').hidden = rows.length > 0;
+    $('#snapshotRows').innerHTML = rows.map(function (s) {
+      var canRollback = s.valid && s.source;
+      return '<tr><td><div class="cell-main">' + esc(s.slug) + '</div><div class="cell-sub">' + esc(s.name) + '</div></td>' +
+        '<td>v' + esc(s.version || '-') + '</td><td>' + esc(fmtTime(s.createdAt || s.mtime_ms)) + '</td><td class="mono">' + esc(s.source || '-') + '</td>' +
+        '<td>' + (s.valid ? '<span class="badge ok">可用</span>' : '<span class="badge danger">不可用</span>') + (s.legacy ? ' <span class="badge warn">旧格式</span>' : '') + (s.reason ? '<div class="cell-sub">' + esc(s.reason) + '</div>' : '') + '</td>' +
+        '<td>' + (canRollback ? '<button class="btn small danger" data-rollback="' + esc(s.path) + '" data-slug="' + esc(s.slug) + '" data-version="' + esc(s.version || '') + '" data-source="' + esc(s.source || '') + '">回滚</button>' : '<span class="faint">CLI 处理</span>') + '</td></tr>';
+    }).join('');
+  }
+  document.querySelectorAll('#view-records [data-tab]').forEach(function (b) {
+    b.onclick = function () {
+      state.tab = b.dataset.tab;
+      Array.prototype.forEach.call(document.querySelectorAll('#view-records [data-tab]'), function (x) { x.classList.toggle('primary', x === b); });
+      $('#recSnapshots').hidden = state.tab !== 'snapshots';
+      $('#recEvidence').hidden = state.tab !== 'evidence';
+      $('#recAudit').hidden = state.tab !== 'audit';
+    };
+  });
+  document.querySelector('#view-records [data-tab="snapshots"]').classList.add('primary');
+  $('#snapshotRows').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-rollback]');
+    if (!b) return;
+    var slug = b.dataset.slug, snap = b.dataset.rollback, source = b.dataset.source;
+    confirmModal('回滚 ' + slug + ' 到 v' + b.dataset.version + '？', '<p class="label">将用快照覆盖安装来源目录；恢复后自动体检并写入证据。</p><div class="mono">' + esc(source) + '</div>', '执行回滚', true, async function () {
+      var r = await api('/api/rollback/apply', { body: { slug: slug, snapshot: snap, confirm: 'rollback' } });
+      if (r.error) { toast(r.error); return; }
+      closeModal();
+      toast(r.ok ? '回滚完成（doctor 通过）' : '回滚完成，但体检未通过');
+      loadRecords();
+      loadOverview();
+    });
+  });
+
+  $('#routeBtn').onclick = runRoute;
+  $('#routeInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') runRoute(); });
+  async function runRoute() {
+    var request = $('#routeInput').value.trim();
+    if (!request) { toast('先输入一句需求'); return; }
+    var d = await api('/api/route?request=' + encodeURIComponent(request));
+    if (d.error) { toast(d.error); return; }
+    var skills = (d.skills || []).map(function (s) {
+      return '<div class="row"><div class="row-main"><div class="row-title">' + s.order + '. ' + esc(s.slug) + ' <span class="badge ' + (s.installed ? 'ok' : 'warn') + '">' + esc(s.installed ? '已装' + (s.version ? ' v' + s.version : '') : '缺失') + '</span></div><div class="row-meta">' + esc(s.role || '') + '</div></div></div>';
+    }).join('');
+    var missing = (d.missing_skills || []).length
+      ? '<div class="section panel"><h3>缺失技能</h3><div class="toolbar"><span class="mono">' + esc((d.missing_skills || []).map(function (s) { return s.slug; }).join(', ')) + '</span><button class="btn small" data-copy-cmd="' + esc(d.install_command || '') + '">复制安装命令</button></div><div class="note">安装与信任判断由你决定；元信装前扫描默认启用。</div></div>'
+      : '';
+    var others = (d.other_skill_candidates || []).length
+      ? '<div class="section panel"><h3>其他已装技能候选</h3>' + d.other_skill_candidates.map(function (c) {
+        return '<div class="row"><div class="row-main"><div class="row-title">' + esc(c.slug) + ' <span class="badge info">v' + esc(c.version) + '</span></div><div class="row-meta">' + esc((c.matched_terms || []).join('、')) + ' · ' + esc(c.description || '') + '</div></div></div>';
+      }).join('') + '<div class="note">只读 frontmatter 机械匹配；使用前请自行确认。</div></div>'
+      : '';
+    $('#routeResult').innerHTML = '<div class="panel"><div class="shead"><h2>' + esc(d.playbook.name) + '</h2><span class="badge">置信度 ' + esc(d.confidence) + '</span></div>' +
+      '<div class="label">' + esc(d.playbook.intent) + '</div><div class="list">' + skills + '</div>' +
+      '<div class="note">动态路由：' + esc((d.dynamic && d.dynamic.status) || '未启用') + ' · 匹配词：' + esc((d.matched_keywords || []).join('、') || '无') + '</div></div>' + missing + others;
+  }
+  $('#routeResult').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-copy-cmd]');
+    if (b) copyText(b.dataset.copyCmd);
+  });
+
+  var CLI_GROUPS = [
+    { name: 'Hub 发现与安装', items: [
+      { cmd: 'yotta-skills hub hosts', why: '发现本机宿主与技能目录' },
+      { cmd: 'yotta-skills hub install', why: '把元阁家族装进 Hub 真源' },
+      { cmd: 'yotta-skills hub adopt --scan', why: '只读预演收编候选与冲突' },
+      { cmd: 'yotta-skills hub adopt --apply', why: '执行收编（默认复制保真）' },
+    ] },
+    { name: '链接与体检', items: [
+      { cmd: 'yotta-skills hub link --all', why: '把 Hub 技能链接到全部宿主' },
+      { cmd: 'yotta-skills hub link --agent codex', why: '只链接到一个宿主' },
+      { cmd: 'yotta-skills hub unlink --all', why: '只删链接，不动 Hub 真源' },
+      { cmd: 'yotta-skills hub status', why: '查看技能 / 来源 / 链接' },
+      { cmd: 'yotta-skills hub doctor', why: '检查断链 / 缺失 / slug 不一致' },
+    ] },
+    { name: '安装与更新', items: [
+      { cmd: 'yotta-skills update --installed-only --dir <技能目录>', why: '只维护已装元技能' },
+      { cmd: 'yotta-skills update --check', why: '只读检查更新' },
+      { cmd: 'yotta-skills rollback --list', why: '查看可回滚快照' },
+      { cmd: 'yotta-skills rollback --slug <技能> --dir <技能目录>', why: '回滚单个技能' },
+    ] },
+    { name: '路由与使用', items: [
+      { cmd: 'yotta-skills --route "帮我做发布前质量检查"', why: '静态编排路由 + 动态路由块' },
+      { cmd: 'yotta-skills --list', why: '列出全家技能与版本' },
+      { cmd: 'yotta-skills --inventory --json', why: '盘点本机已装技能' },
+    ] },
+  ];
+  $('#cliGroups').innerHTML = CLI_GROUPS.map(function (g) {
+    return '<div class="panel cmd-group"><h3>' + esc(g.name) + '</h3>' + g.items.map(function (item) {
+      return '<div class="cmd"><code>' + esc(item.cmd) + '</code><span class="why">' + esc(item.why) + '</span><button class="btn small" data-copy-cmd="' + esc(item.cmd) + '">复制</button></div>';
+    }).join('') + '</div>';
+  }).join('');
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('#cliGroups [data-copy-cmd]');
+    if (b) copyText(b.dataset.copyCmd);
+  });
+
+  (async function boot() {
+    var s = await api('/api/status');
+    if (s && !s.error) $('#verLine').textContent = 'v' + s.version + ' · ' + (s.standard || '');
+    else $('#verLine').textContent = '未连接本地服务';
+    loadOverview();
+  })();
+})();
+</script>
+</body>
+</html>

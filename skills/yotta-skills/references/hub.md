@@ -59,6 +59,22 @@ npx -y @yottameta/yotta-skills hub doctor
 - 官方锁文件：只读兼容 Vercel Labs `skills` CLI 的 `.skill-lock.json` v3
   （`$XDG_STATE_HOME/skills/` 或 `~/.agents/`）。
 
+## 本地面板（yotta-skills view）
+
+```bash
+npx -y @yottameta/yotta-skills view
+npx -y @yottameta/yotta-skills view --port 8790
+```
+
+面板只在 `127.0.0.1`（默认 8789）监听，零远程资源、零遥测，只读写 Hub
+目录与台账 / 证据文件，不读元忆、不改宿主全局配置。六个视图：概览、宿主矩阵、
+收编向导、链接与体检、记录与回滚、路由与编排，另附高级 CLI 页。
+
+动作边界：收编 / 链接 / 解除 / 回滚可执行（预览 → 确认 → 执行 → 证据）；
+install / update / refresh 只在高级 CLI 页给出可复制命令，不在网页执行。
+写操作需要页面会话令牌，解除与回滚需要破坏性确认串；收编始终逐项运行元信
+扫描，high / critical 阻断。
+
 ## 安全边界
 
 - `unlink` 只删除 lstat 确认为链接、且 readlink 目标位于 Hub 内的路径。

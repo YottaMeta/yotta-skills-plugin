@@ -80,10 +80,10 @@ function readVersion(root) {
 function validateSnapshot(snapshot) {
   const root = path.resolve(snapshot || '');
   if (!snapshot || !fs.existsSync(root)) {
-    return { ok: false, version: null, digest: null, legacy: false, reason: '快照目录不存在' };
+    return { ok: false, version: null, digest: null, legacy: false, reason: '快照目录不存在', source: null, createdAt: null };
   }
   if (!fs.statSync(root).isDirectory()) {
-    return { ok: false, version: null, digest: null, legacy: false, reason: '快照不是目录' };
+    return { ok: false, version: null, digest: null, legacy: false, reason: '快照不是目录', source: null, createdAt: null };
   }
   const metaFile = root + '.meta.json';
   if (fs.existsSync(metaFile)) {
@@ -91,13 +91,21 @@ function validateSnapshot(snapshot) {
     try {
       metadata = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
     } catch (error) {
-      return { ok: false, version: null, digest: null, legacy: false, reason: '快照元数据无法解析: ' + error.message };
+      return { ok: false, version: null, digest: null, legacy: false, reason: '快照元数据无法解析: ' + error.message, source: null, createdAt: null };
     }
     let current;
     try {
       current = computeTreeDigest(root);
     } catch (error) {
-      return { ok: false, version: metadata.version || null, digest: metadata.digest || null, legacy: false, reason: '快照不可读: ' + error.message };
+      return {
+        ok: false,
+        version: metadata.version || null,
+        digest: metadata.digest || null,
+        legacy: false,
+        reason: '快照不可读: ' + error.message,
+        source: metadata.source || null,
+        createdAt: metadata.created_at || null,
+      };
     }
     if (!metadata.digest || current.digest !== metadata.digest) {
       return {
@@ -106,6 +114,8 @@ function validateSnapshot(snapshot) {
         digest: metadata.digest || null,
         legacy: false,
         reason: '快照摘要不一致，可能已被修改',
+        source: metadata.source || null,
+        createdAt: metadata.created_at || null,
       };
     }
     return {
@@ -114,14 +124,16 @@ function validateSnapshot(snapshot) {
       digest: metadata.digest,
       legacy: false,
       reason: null,
+      source: metadata.source || null,
+      createdAt: metadata.created_at || null,
     };
   }
 
   const version = readVersion(root);
   if (!fs.existsSync(path.join(root, 'SKILL.md'))) {
-    return { ok: false, version, digest: null, legacy: true, reason: '旧快照缺少 SKILL.md' };
+    return { ok: false, version, digest: null, legacy: true, reason: '旧快照缺少 SKILL.md', source: null, createdAt: null };
   }
-  return { ok: true, version, digest: null, legacy: true, reason: null };
+  return { ok: true, version, digest: null, legacy: true, reason: null, source: null, createdAt: null };
 }
 
 function createSnapshot(target, options) {
@@ -191,6 +203,8 @@ function listSnapshots(homeDir, slug) {
         version: validation.version,
         legacy: validation.legacy,
         reason: validation.reason,
+        source: validation.source || null,
+        createdAt: validation.createdAt || null,
         mtime_ms: mtimeMs,
       });
     }

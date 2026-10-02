@@ -300,11 +300,30 @@ function classifyTarget(target, hubDir) {
     return { kind: 'missing' };
   }
   if (stat.isSymbolicLink()) {
-    const real = safeRealpath(target);
+    let real = null;
+    let targetExists = false;
+    try {
+      real = fs.realpathSync.native ? fs.realpathSync.native(target) : fs.realpathSync(target);
+      targetExists = true;
+    } catch (_) {
+      try {
+        real = fs.realpathSync(target);
+        targetExists = true;
+      } catch (_) { /* broken link: fall back to the recorded link value */ }
+    }
+    if (!real) {
+      // A broken junction / symlink no longer resolves. Read the link value so
+      // an unlink can still tell whether it points into the hub (fail-closed
+      // cleanup path) without treating it as an arbitrary directory.
+      let linkValue = null;
+      try { linkValue = fs.readlinkSync(target); } catch (_) { linkValue = null; }
+      real = linkValue ? path.resolve(path.dirname(path.resolve(target)), linkValue) : path.resolve(target);
+    }
     return {
       kind: 'link',
       target: real,
       inHub: isInside(hubDir, real),
+      targetExists,
     };
   }
   if (stat.isDirectory()) return { kind: 'directory' };
@@ -333,7 +352,7 @@ function linkSkills(options) {
     const target = path.join(targetDir, slug);
     const current = classifyTarget(target, hubDir);
     let backup = null;
-    if (current.kind === 'link' && current.inHub && samePath(current.target, skill.dir)) {
+    if (current.kind === 'link' && current.inHub && current.targetExists !== false && samePath(current.target, skill.dir)) {
       results.push({ slug, status: 'linked', target, note: '已链接到 hub' });
       continue;
     }
@@ -462,9 +481,9 @@ function linkStatus(hubDir) {
     const current = classifyTarget(item.target, hubDir);
     return {
       ...item,
-      status: current.kind === 'link' && current.inHub ? 'ok'
-        : current.kind === 'missing' ? 'broken'
-          : 'drift',
+      status: current.kind === 'link'
+        ? (!current.inHub ? 'drift' : (current.targetExists === false ? 'broken' : 'ok'))
+        : current.kind === 'missing' ? 'broken' : 'drift',
       actual: current,
     };
   });

@@ -61,7 +61,7 @@ const AGENT_DIRS = {
   opencode:          { label: 'OpenCode',              dirs: ['.config/opencode/skills', '.agents/skills'] },
   openhands:         { label: 'OpenHands',             dirs: ['.openhands/skills'] },
   ona:               { label: 'Ona',                   dirs: ['.ona/skills'] },
-  openclaw:          { label: 'OpenClaw / QClaw',      dirs: ['.openclaw/skills'] },
+    openclaw:          { label: 'OpenClaw',              dirs: ['.openclaw/skills'] },
   pi:                { label: 'Pi',                    dirs: ['.agents/skills'] },
   posit:             { label: 'Posit Assistant',       dirs: ['.posit/assistant/skills'] },
   qoder:             { label: 'Qoder',                 dirs: ['.qoder/skills'] },
