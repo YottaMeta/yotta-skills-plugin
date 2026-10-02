@@ -1,7 +1,7 @@
 ---
 name: yotta-skills
-version: 0.24.2
-description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点 + 运行时 hook 适配。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；M1 记忆裁决层：usage enable/mark 本地结构化记录 + decide-memory / MCP decide_memory 输出 promote / hold / demote 只读建议（需授权 provider；只建议不删除、不自动写元忆）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么组合使用（安装与调用均由用户确认后执行）」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录（默认 --pin 锁死清单精确版本）；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工只建议跑本地 --reindex；更新检查走手动 --check 或后台 --check --scheduled）；运行时适配层：hook capabilities / evaluate / bind / unbind 按宿主能力矩阵执行六个统一事件并留证降级，元信 before_install 已接入安装管线；自包含零依赖，不依赖任何元技能；MCP 按需加载且需用户确认后写入配置（可选：list_installed_skills/describe_skill/reindex/route_request/decide_memory，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / usage 使用记录 / decide-memory 记忆裁决 / install / update / update --check（只读检查）/ update --check --scheduled（后台周检）/ update --auto（家族自动更新）/ hook 适配 / --inventory / --reindex / --dry-run 预览 / --pin（默认）/ --range。触发：需要批量安装或更新元阁全家技能、按场景组合多个元技能、路由或判断该用哪些技能、判断哪些技能值得长期记忆、查看或记录技能使用信号、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、评估宿主 hook 能力、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/hook 适配/该用哪个技能/路由技能/记忆裁决/技能该不该记住/盘点技能/查看已装技能 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + M1 记忆裁决只读建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index + hook 适配」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能、不静默写宿主配置或全局记忆、不自动删除技能或记忆；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
+version: 0.25.0
+description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点 + 本机技能 Hub + 运行时 hook 适配。Hub 层：hub hosts 只读发现本机已装智能体与技能目录（文件系统优先，不读元忆）；hub install / update 把技能装到 ~/.yottaskills/hub 单点真源；hub link --all 用 Windows junction / POSIX symlink 分发到全部已发现宿主；hub unlink 只删链接、fail-closed；hub status 显示来源、版本、链接与异常；兼容 agentskills.io 技能格式、Vercel Labs skills CLI 的 .agents/skills 通用目录与 .skill-lock.json v3（只读）。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；M1 记忆裁决层：usage enable/mark 本地结构化记录 + decide-memory / MCP decide_memory 输出 promote / hold / demote 只读建议（需授权 provider；只建议不删除、不自动写元忆）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么组合使用（安装与调用均由用户确认后执行）」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录（默认 --pin 锁死清单精确版本）；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工只建议跑本地 --reindex；更新检查走手动 --check 或后台 --check --scheduled）；运行时适配层：hook capabilities / evaluate / bind / unbind 按宿主能力矩阵执行六个统一事件并留证降级，元信 before_install 已接入安装管线；自包含零依赖，不依赖任何元技能；MCP 按需加载且需用户确认后写入配置（可选：list_installed_skills/describe_skill/reindex/route_request/decide_memory，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / usage 使用记录 / decide-memory 记忆裁决 / hub 技能 Hub / install / update / update --check（只读检查）/ update --check --scheduled（后台周检）/ update --auto（家族自动更新）/ hook 适配 / --inventory / --reindex / --dry-run 预览 / --pin（默认）/ --range。触发：需要批量安装或更新元阁全家技能、单点安装并分发到多个智能体、查看本机装了哪些智能体与技能目录、接管非元技能、按场景组合多个元技能、路由或判断该用哪些技能、判断哪些技能值得长期记忆、查看或记录技能使用信号、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、评估宿主 hook 能力、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/hook 适配/该用哪个技能/路由技能/记忆裁决/技能该不该记住/盘点技能/查看已装技能/技能 Hub/单点安装/链接分发/接管技能 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + M1 记忆裁决只读建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index + Hub 本机真源与链接分发 + hook 适配」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能、不静默写宿主配置或全局记忆、不自动删除技能或记忆；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
 license: MIT
 metadata:
   zh_name: 元阁
@@ -154,6 +154,38 @@ openclaw skills update @yottameta/yotta-skills
 > **OpenClaw / QClaw 用户**：技能安装与更新走宿主官方命令 `openclaw skills install|update @yottameta/<slug>`，
 > 以保留宿主的 ClawHub 安全审计卡与更新追踪；元阁的 `--inventory` / `--reindex` 已能识别 `~/.openclaw/skills`（含 `OPENCLAW_STATE_DIR` 覆盖）。
 
+## 技能 Hub（单点安装 + 链接分发）
+
+Hub 把「每个宿主装一份」改成「本机一份真源，按宿主链接分发」。默认真源
+`~/.yottaskills/hub`，可用 `--hub <dir>` 或 `YOTTA_SKILLS_HUB` 覆盖。
+
+```bash
+# 1) 只读发现本机已装智能体与技能目录（文件系统 + 环境变量；不读元忆 / 注册表）
+npx -y @yottameta/yotta-skills hub hosts
+
+# 2) 把元技能装进 Hub 真源（复用安装管线 + 元信装前扫描）
+npx -y @yottameta/yotta-skills hub install
+
+# 3) 接管各宿主现有技能：先只读预演，再复制收编（原目录保留）
+npx -y @yottameta/yotta-skills hub adopt --scan
+npx -y @yottameta/yotta-skills hub adopt --apply
+
+# 4) 链接分发到全部已发现宿主（Windows junction / macOS·Linux symlink）
+npx -y @yottameta/yotta-skills hub link --all
+
+# 5) 查看来源、版本、链接宿主与异常
+npx -y @yottameta/yotta-skills hub status
+npx -y @yottameta/yotta-skills hub doctor
+
+# 只删链接，不动 Hub 真源（真目录 / 外部链接一律拒绝）
+npx -y @yottameta/yotta-skills hub unlink --all
+```
+
+宿主发现兼容 `agentskills.io` 技能格式与 Vercel Labs `skills` CLI 的
+`.agents/skills` 通用目录；已收录 79 条宿主映射，并只读兼容
+`.skill-lock.json` v3（`$XDG_STATE_HOME/skills/` 或 `~/.agents/`）。
+不读元忆，不重写官方锁文件，不静默降级为复制。
+
 ## 命令与选项
 
 | 命令 / 选项 | 作用 |
@@ -174,6 +206,15 @@ openclaw skills update @yottameta/yotta-skills
 | `hook bind --host <name> --manifest <file>` | 幂等注册 hook 声明；`hook unbind <id>` 反注册 |
 | `--inventory` | 盘点本机已装技能：扫描技能目录生成/更新注册表（自包含，不依赖元技能）；`--json` 输出 JSON、`--project` 附扫项目级目录 |
 | `--reindex` | 重扫注册表：扫描技能目录并增量合并变化（install / update 完成后 CLI 自动重扫；也可在会话开工等时机手动运行）；`--json` 输出 JSON、`--project` 附扫项目级目录；`--rescan` 同义 |
+| `hub hosts` | 发现本机已装智能体与技能目录（文件系统 + 环境变量；不读元忆 / 注册表）；`--json` 输出 JSON |
+| `hub install [skill...]` | 把元技能安装到 Hub 真源（默认 `~/.yottaskills/hub`；`--hub` / `YOTTA_SKILLS_HUB` 覆盖） |
+| `hub adopt --scan` | 只读预演：扫描各宿主现有技能，输出收编候选、多副本冲突、已在 Hub 状态 |
+| `hub adopt --apply [--include <a,b>] [--force] [--in-place]` | 把选中技能收编进 Hub；默认复制保真 + 原目录保留；非元阁来源标注「无更新源」 |
+| `hub refresh <slug> --from <path>` | 手动同步非元阁技能（重新收编 + 更新哈希 + 台账） |
+| `hub link --agent <id> \| --dir <dir> \| --all` | 把 Hub 技能链接到指定宿主 / 目录 / 全部已发现宿主；`--dry-run` 只预览 |
+| `hub unlink --agent <id> \| --dir <dir> \| --all` | 只删除链接；lstat + readlink 校验目标在 Hub 内，fail-closed |
+| `hub status [--json]` | 查看 Hub 技能来源、版本、链接宿主、异常链接与宿主发现摘要 |
+| `hub doctor [--json]` | 检查断链 / Hub 目标缺失 / slug 不一致 / 目录权限；异常时退出码 1 |
 | `--route <需求摘要>` | 编排路由：输出组合、调用顺序、技能角色、置信度、依据、已装/缺失状态与安装建议；可选本地 provider 增补 / 重排并返回 `confidence` / `reasons` / `summary` / `alternatives`；`--json` 输出 JSON、`--project` 附扫项目级目录 |
 | `usage status` | 查看本地使用记录开关与计数；默认关闭，不创建文件 |
 | `usage enable` / `usage disable` | 开启 / 关闭 `--route` 的结构化使用记录；不记录需求原文 |

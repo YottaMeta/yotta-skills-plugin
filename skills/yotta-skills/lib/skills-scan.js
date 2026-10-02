@@ -17,33 +17,15 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const agentDirs = require('./agent-dirs');
 
 const REGISTRY_DIR_NAME = '.yottaskills';
 const REGISTRY_FILE_NAME = 'registry.json';
 const SKILL_FILE = 'SKILL.md';
 
-// 智能体 -> 用户级默认技能目录（与 bin/yotta-skills.js AGENT_DIRS 同源；
-// 依据 agent-skill-dir-map 权威映射，2026-08-23 核实）
-const AGENT_DIRS = {
-  claude:    { label: 'Claude Code',      dirs: ['.claude/skills'] },
-  cursor:    { label: 'Cursor',           dirs: ['.cursor/skills', '.agents/skills'] },
-  codex:     { label: 'Codex',            dirs: [] }, // 特判：$CODEX_HOME/skills
-  gemini:    { label: 'Gemini CLI',       dirs: ['.gemini/skills', '.agents/skills'] },
-  goose:     { label: 'Goose',            dirs: ['.config/goose/skills', '.agents/skills'] },
-  amp:       { label: 'Amp',              dirs: ['.config/agents/skills', '.agents/skills'] },
-  opencode:  { label: 'OpenCode',         dirs: [] }, // 特判：$XDG_CONFIG_HOME
-  windsurf:  { label: 'Windsurf',         dirs: ['.codeium/windsurf/skills'] },
-  workbuddy: { label: 'WorkBuddy',        dirs: ['.workbuddy/skills'] },
-  kiro:      { label: 'Kiro',             dirs: ['.kiro/skills'] },
-  trae:      { label: 'Trae Code CLI',    dirs: ['.traecli/skills'] },
-  'trae-cn': { label: 'Trae IDE（国内）',  dirs: ['.trae-cn/skills'] },
-  qwen:      { label: 'Qwen Code',        dirs: ['.qwen/skills'] },
-  comate:    { label: 'Comate 文心快码',   dirs: ['.comate/skills'] },
-  codebuddy: { label: 'CodeBuddy Code',   dirs: ['.codebuddy/skills'] },
-  kimi:      { label: 'Kimi Code CLI',    dirs: ['.kimi/skills'] },
-  openclaw:  { label: 'OpenClaw / QClaw', dirs: ['.openclaw/skills'] }, // 特判：$OPENCLAW_STATE_DIR
-  agents:    { label: '通用 AGENTS.md',    dirs: ['.agents/skills'] },
-};
+// 智能体 -> 用户级默认技能目录。单一真源在 lib/agent-dirs.js
+// （兼容 Vercel Labs `skills` CLI / agentskills.io 的宿主表，MIT）。
+const AGENT_DIRS = agentDirs.AGENT_DIRS;
 
 /** 解析 SKILL.md 前部 YAML frontmatter（name/version/description 单行值）。 */
 function parseFrontmatter(text) {
@@ -153,8 +135,13 @@ function scanSkillDir(dir) {
     return results;
   }
   for (const e of entries) {
-    if (!e.isDirectory()) continue;
+    if (!e.isDirectory() && !e.isSymbolicLink()) continue;
     const skillDir = path.join(dir, e.name);
+    try {
+      if (!fs.statSync(skillDir).isDirectory()) continue;
+    } catch (_) {
+      continue;
+    }
     let text;
     try {
       text = fs.readFileSync(path.join(skillDir, SKILL_FILE), 'utf8');
@@ -175,27 +162,21 @@ function scanSkillDir(dir) {
 
 /** Codex 用户级技能目录：$CODEX_HOME/skills（默认 ~/.codex/skills）。 */
 function codexUserDir() {
-  const base = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
-  return path.join(base, 'skills');
+  return agentDirs.resolveUserDir('.codex/skills', { homeDir: os.homedir(), env: process.env });
 }
 
 /** OpenCode 用户级技能目录：$XDG_CONFIG_HOME/opencode/skills。 */
 function opencodeUserDir() {
-  const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-  return path.join(base, 'opencode', 'skills');
+  return agentDirs.resolveUserDir('.config/opencode/skills', { homeDir: os.homedir(), env: process.env });
 }
 
 /** OpenClaw / QClaw 用户级技能目录：$OPENCLAW_STATE_DIR/skills（默认 ~/.openclaw/skills）。 */
 function openclawUserDir() {
-  const base = process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw');
-  return path.join(base, 'skills');
+  return agentDirs.resolveUserDir('.openclaw/skills', { homeDir: os.homedir(), env: process.env });
 }
 
 function resolveUserDir(rel) {
-  if (rel === '.codex/skills') return codexUserDir();
-  if (rel === '.config/opencode/skills') return opencodeUserDir();
-  if (rel === '.openclaw/skills') return openclawUserDir();
-  return path.join(os.homedir(), rel);
+  return agentDirs.resolveUserDir(rel, { homeDir: os.homedir(), env: process.env });
 }
 
 /**
@@ -216,12 +197,9 @@ function defaultRoots(opts) {
     roots.push({ dir: norm, label });
   };
   const home = os.homedir();
-  for (const key of Object.keys(AGENT_DIRS)) {
-    const info = AGENT_DIRS[key];
-    for (const rel of info.dirs) add(resolveUserDir(rel), info.label);
+  for (const root of agentDirs.knownRoots({ homeDir: home, env: process.env })) {
+    add(root.dir, root.label);
   }
-  add(codexUserDir(), 'Codex');
-  add(opencodeUserDir(), 'OpenCode');
   if (Array.isArray(opts.extraDirs)) {
     for (const d of opts.extraDirs) add(d, '指定目录');
   }
@@ -268,6 +246,11 @@ function scanRoots(roots) {
     }
   }
   for (const item of map.values()) {
+    item.variants.sort((a, b) => {
+      const byVersion = compareSemver(a.version, b.version);
+      if (byVersion) return byVersion;
+      return String(a.source || '').localeCompare(String(b.source || ''));
+    });
     const representative = selectRepresentativeVariant(item.variants);
     if (!representative) continue;
     item.version = representative.version || '';
@@ -282,6 +265,13 @@ function scanRoots(roots) {
       }));
     if (conflicts.length) item.conflicts = conflicts;
     else delete item.conflicts;
+    if (item.conflicts) {
+      item.conflicts.sort((a, b) => {
+        const byVersion = compareSemver(a.version, b.version);
+        if (byVersion) return byVersion;
+        return String(a.source || '').localeCompare(String(b.source || ''));
+      });
+    }
   }
   return {
     generated_at: new Date().toISOString(),

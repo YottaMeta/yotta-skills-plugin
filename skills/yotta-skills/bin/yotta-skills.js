@@ -45,11 +45,15 @@ const routeDynamicLib = require('../lib/route-dynamic');
 const depsLib = require('../lib/deps');
 const untarLib = require('../lib/untar');
 const registryFetchLib = require('../lib/registry-fetch');
+const agentDirsLib = require('../lib/agent-dirs');
+const agentDiscoveryLib = require('../lib/agent-discovery');
+const hubLib = require('../lib/hub');
+const hubAdoptLib = require('../lib/hub-adopt');
 const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 const { COPY_SKIP, copyDir } = require('../lib/copy-tree');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.24.2';
+let VERSION = '0.25.0';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
@@ -72,39 +76,18 @@ function loadManifest() {
 
 const MANIFEST = loadManifest();
 
-// 智能体 -> 用户级默认技能目录（与各技能 install.js 同源；.agents/skills 并非通用目录）
-const AGENT_DIRS = {
-  claude:    { label: 'Claude Code',      dirs: ['.claude/skills'] },
-  cursor:    { label: 'Cursor',           dirs: ['.cursor/skills', '.agents/skills'] },
-  codex:     { label: 'Codex',            dirs: ['.codex/skills'] }, // 特判：$CODEX_HOME/skills
-  gemini:    { label: 'Gemini CLI',       dirs: ['.gemini/skills', '.agents/skills'] },
-  goose:     { label: 'Goose',            dirs: ['.config/goose/skills', '.agents/skills'] },
-  amp:       { label: 'Amp',              dirs: ['.config/agents/skills', '.agents/skills'] },
-  opencode:  { label: 'OpenCode',         dirs: ['.config/opencode/skills'] }, // 特判：$XDG_CONFIG_HOME
-  windsurf:  { label: 'Windsurf',         dirs: ['.codeium/windsurf/skills'] },
-  workbuddy: { label: 'WorkBuddy',        dirs: ['.workbuddy/skills'] },
-  kiro:      { label: 'Kiro',             dirs: ['.kiro/skills'] },
-  trae:      { label: 'Trae Code CLI',    dirs: ['.traecli/skills'] },
-  'trae-cn': { label: 'Trae IDE（国内）',  dirs: ['.trae-cn/skills'] },
-  qwen:      { label: 'Qwen Code',        dirs: ['.qwen/skills'] },
-  comate:    { label: 'Comate 文心快码',   dirs: ['.comate/skills'] },
-  codebuddy: { label: 'CodeBuddy Code',   dirs: ['.codebuddy/skills'] },
-  kimi:      { label: 'Kimi Code CLI',    dirs: ['.kimi/skills'] },
-  agents:    { label: '通用 AGENTS.md',    dirs: ['.agents/skills'] },
-};
+// 智能体 -> 用户级默认技能目录。单一真源在 lib/agent-dirs.js
+// （兼容 Vercel Labs `skills` CLI / agentskills.io 的宿主表，MIT）。
+const AGENT_DIRS = agentDirsLib.AGENT_DIRS;
 
 function codexUserDir() {
-  const base = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
-  return path.join(base, 'skills');
+  return agentDirsLib.resolveUserDir('.codex/skills', { homeDir: os.homedir(), env: process.env });
 }
 function opencodeUserDir() {
-  const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-  return path.join(base, 'opencode', 'skills');
+  return agentDirsLib.resolveUserDir('.config/opencode/skills', { homeDir: os.homedir(), env: process.env });
 }
 function resolveUserDir(rel) {
-  if (rel === '.codex/skills') return codexUserDir();
-  if (rel === '.config/opencode/skills') return opencodeUserDir();
-  return path.join(os.homedir(), rel);
+  return agentDirsLib.resolveUserDir(rel, { homeDir: os.homedir(), env: process.env });
 }
 
 // ── 工具函数 ───────────────────────────────────────────────────────────────
@@ -170,6 +153,9 @@ function parseArgs(argv) {
     host: null, event: null, manifest: null, context: null,
     signal: null, yes: false, explain: false, promote: false,
     only: [], domain: null, installedOnly: false,
+    hub: null, all: false, inPlace: false, allowUnverified: false,
+    from: null, include: [], as: null, skillsCli: null,
+    scan: false, apply: false,
   };
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
@@ -219,6 +205,22 @@ function parseArgs(argv) {
     }
     else if (a === '--domain') opts.domain = take('--domain').toLowerCase();
     else if (a === '--installed-only') opts.installedOnly = true;
+    else if (a === '--hub') opts.hub = take('--hub');
+    else if (a === '--all') opts.all = true;
+    else if (a === '--in-place') opts.inPlace = true;
+    else if (a === '--scan') opts.scan = true;
+    else if (a === '--apply') opts.apply = true;
+    else if (a === '--allow-unverified') opts.allowUnverified = true;
+    else if (a === '--from') opts.from = take('--from');
+    else if (a === '--include') {
+      const value = take('--include');
+      for (const item of value.split(',')) {
+        const slug = item.trim().toLowerCase();
+        if (slug) opts.include.push(slug);
+      }
+    }
+    else if (a === '--as') opts.as = take('--as').toLowerCase();
+    else if (a === '--skills-cli') opts.skillsCli = take('--skills-cli');
     else if (a === '--host') opts.host = take('--host').toLowerCase();
     else if (a === '--event') opts.event = take('--event').toLowerCase();
     else if (a === '--manifest') opts.manifest = take('--manifest');
@@ -233,7 +235,12 @@ function parseArgs(argv) {
   }
   // 命令解析：install / update / doctor / rollback，其余位置参数 = 技能 slug（可多个）
   for (const p of positionals) {
+    if (opts.command === 'hub') {
+      opts.rest.push(p);
+      continue;
+    }
     if (p === 'install' || p === 'update' || p === 'doctor' || p === 'rollback' || p === 'hook'
+      || p === 'hub'
       || p === 'usage' || p === 'decide-memory') {
       if (opts.command && opts.command !== p) die('命令冲突：' + opts.command + ' 与 ' + p);
       opts.command = p;
@@ -244,11 +251,20 @@ function parseArgs(argv) {
   // 直接给 slug 且无命令 → 视为 install 单个/多个
   if (!opts.command && opts.rest.length > 0) opts.command = 'install';
   opts.skills = opts.rest.map(s => s.toLowerCase());
+  if (opts.command === 'hub') {
+    opts.hubAction = opts.skills[0] || 'status';
+    opts.skills = opts.skills.slice(1);
+  }
   if (opts.scheduled && (opts.command !== 'update' || !opts.check || opts.auto)) {
     die('--scheduled 只能与 update --check 一起使用', 2, '请使用 update --check --scheduled；自动更新不使用后台调度入口。');
   }
   if (opts.installedOnly && opts.command !== 'update') {
     die('--installed-only 只能与 update 一起使用', 2, '标准配方：yotta-skills update --installed-only --dir <技能目录>。');
+  }
+  if ((opts.all || opts.inPlace || opts.allowUnverified || opts.from || opts.include.length || opts.as || opts.scan || opts.apply)
+    && opts.command !== 'hub') {
+    die('--all / --in-place / --allow-unverified / --from / --include / --as / --scan / --apply 只能与 hub 命令一起使用', 2,
+      'Hub 用法：yotta-skills hub link --all 或 yotta-skills hub adopt --scan。');
   }
   if (opts.domain && !domainValues().includes(opts.domain)) {
     die('未知 domain: ' + opts.domain + '。可用: ' + domainValues().join(', '), 2, 'domain 对齐家族索引 9 类；用 yotta-skills --list 查看技能清单。');
@@ -1306,6 +1322,16 @@ function printHelp() {
   out('  yotta-skills hook evaluate --event <event> --manifest <file>  评估 hook 声明并留证');
   out('  yotta-skills hook bind --manifest <file>  注册 hook 声明（幂等）');
   out('  yotta-skills hook unbind <binding-id>  反注册 hook 声明');
+  out('  yotta-skills hub hosts              发现本机已装智能体与技能目录（不读元忆）');
+  out('  yotta-skills hub install [skill...]  把元技能装进本机 Hub（单点真源）');
+  out('  yotta-skills hub adopt --scan        只读预演：扫描各宿主现有技能，输出收编候选与冲突');
+  out('  yotta-skills hub adopt --apply       把选中技能复制进 Hub（默认保留原目录；--in-place 原地登记）');
+  out('  yotta-skills hub refresh <slug> --from <path>  手动同步非元阁技能（无统一更新源）');
+  out('  yotta-skills hub link --all          把 Hub 技能链接到全部已发现宿主（junction / symlink）');
+  out('  yotta-skills hub link --agent <id>   只链接到一个宿主（未知宿主用 --dir）');
+  out('  yotta-skills hub unlink --all        只删除链接，不动 Hub 真源（fail-closed）');
+  out('  yotta-skills hub status              查看 Hub 技能 / 来源 / 链接 / 宿主');
+  out('  yotta-skills hub doctor              检查断链 / 目标缺失 / slug 不一致 / 目录权限');
   out('');
   out('选项:');
   out('  --agent <name>   智能体键名（--list 可查看；未知智能体请用 --dir）');
@@ -1336,12 +1362,18 @@ function printHelp() {
   out('  --yes             usage reset 确认清空');
   out('  --explain         decide-memory 文本报告追加信号明细');
   out('  --promote         decide-memory 只写本地建议文件（不写元忆）');
+  out('  --hub <path>      Hub 目录（默认 ~/.yottaskills/hub；YOTTA_SKILLS_HUB 覆盖）');
+  out('  --all             hub link / unlink 时作用于全部已发现宿主');
+  out('  --scan            hub adopt 只读预演（默认行为）');
+  out('  --apply           hub adopt 执行收编');
+  out('  --in-place        hub adopt 原地登记，不复制（原目录删除即断链）');
+  out('  --allow-unverified 显式允许未扫描导入（默认 high / critical 阻断）');
   out('  --project         inventory / reindex 时附加扫描当前项目 .agents/skills / .codex/skills');
   out('  --no-reindex      安装 / 更新后不自动重扫注册表');
   out('  -h, --help       帮助');
   out('  -v, --version    版本');
   out('');
-  out('支持智能体: ' + Object.keys(AGENT_DIRS).join(', '));
+  out('支持智能体: ' + Object.keys(AGENT_DIRS).length + ' 个已收录映射（本机实际发现用 yotta-skills hub hosts）');
   out('依赖: Node.js 18+（必需）；npm 与系统 tar 为回退通道（内置拉包 / 内置解包为主）；元信 scan 需要 Python 3.8+（--python / YOTTA_SKILLS_PYTHON 可指向宿主自带 Python）。');
   out('环境变量: YOTTA_SKILLS_FETCH（builtin|npm）/ YOTTA_SKILLS_EXTRACT（builtin|tar）/ YOTTA_SKILLS_NPM / YOTTA_SKILLS_PYTHON / YOTTA_SKILLS_VERIFY / YOTTA_SKILLS_NPM_FLAGS / YOTTA_SKILLS_REGISTRY / YOTTA_SKILLS_REGISTRY_FILE / YOTTA_SKILLS_MANIFEST 可覆盖。');
 }
@@ -1800,6 +1832,356 @@ function runHook(opts) {
   die('未知 hook 子命令: ' + action, 2, '支持 capabilities / evaluate / bind / unbind。');
 }
 
+// ── Hub（本机单点安装 + 链接分发） ─────────────────────────────────────────
+function universalSkillDirs() {
+  const home = os.homedir();
+  const xdg = process.env.XDG_CONFIG_HOME || path.join(home, '.config');
+  return [
+    { dir: path.join(xdg, 'agents', 'skills'), agentId: 'universal', label: 'Universal .agents' },
+    { dir: path.join(home, '.agents', 'skills'), agentId: 'agents', label: '通用 AGENTS.md' },
+  ];
+}
+
+function hubTargetDirs(opts, discovery) {
+  const targets = [];
+  const seen = new Set();
+  const add = (dir, agentId, label) => {
+    if (!dir) return;
+    const resolved = path.resolve(dir);
+    const key = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    if (seen.has(key)) return;
+    seen.add(key);
+    targets.push({ dir: resolved, agentId: agentId || null, label: label || '指定目录' });
+  };
+
+  if (opts.dir) {
+    add(opts.dir, null, '指定目录');
+    return targets;
+  }
+  if (opts.agent) {
+    const info = AGENT_DIRS[opts.agent];
+    if (!info) {
+      die('未收录智能体: ' + opts.agent + '。可用: ' + Object.keys(AGENT_DIRS).join(', ') + '；或改用 --dir <路径>。',
+        2, '先运行 yotta-skills hub hosts 查看本机实际技能目录。');
+    }
+    add(resolveUserDir(info.dirs[0]), opts.agent, info.label);
+    return targets;
+  }
+  if (!opts.all) {
+    die('hub link / unlink 需要 --agent <id>、--dir <path> 或 --all', 2,
+      '示例：yotta-skills hub link --all；或 yotta-skills hub link --agent codex。');
+  }
+
+  for (const item of universalSkillDirs()) add(item.dir, item.agentId, item.label);
+  for (const host of discovery.hosts) {
+    if (!host.exists) continue;
+    add(host.dir, host.agentId, host.label);
+  }
+  return targets;
+}
+
+function hubHostLines(discovery) {
+  const lines = [];
+  const existing = discovery.hosts.filter((host) => host.exists);
+  const missing = discovery.hosts.filter((host) => !host.exists);
+  for (const host of existing) {
+    lines.push('  ' + (host.known ? '✔' : '?') + ' ' +
+      String(host.label).padEnd(28) + host.dir.padEnd(64) +
+      String(host.skillCount).padStart(3) + ' 个技能' +
+      (host.known ? '  [已收录]' : '  [自动发现]'));
+  }
+  const noSkillDir = discovery.installed.filter((item) => !item.hasSkillsDir);
+  for (const item of noSkillDir) {
+    lines.push('  △ ' + String(item.label).padEnd(28) + '已安装，未发现技能目录  [不适用]');
+  }
+  return { lines, existing, missing, noSkillDir };
+}
+
+function printHubHosts(discovery, json) {
+  if (json) {
+    out(JSON.stringify(discovery, null, 2));
+    return;
+  }
+  const view = hubHostLines(discovery);
+  out('yotta-skills（元阁）v' + VERSION + ' —— Hub 宿主发现（文件系统优先，不读元忆）');
+  out('本机发现技能目录 ' + view.existing.length + ' 个 / 已装应用标记 ' + discovery.installed.length +
+    ' 个 / 未发现技能目录 ' + view.noSkillDir.length + ' 个');
+  for (const line of view.lines) out(line);
+  if (view.missing.length > 0) {
+    out('');
+    out('未安装 / 未发现目录 ' + view.missing.length + ' 个（已收录映射，等安装后自动出现）。');
+  }
+}
+
+function printHubStatus(payload, discovery, json) {
+  if (json) {
+    out(JSON.stringify({ ...payload, discovery }, null, 2));
+    return;
+  }
+  out('yotta-skills（元阁）v' + VERSION + ' —— Hub 状态');
+  out('标准: ' + payload.standard);
+  out('Hub: ' + payload.hubDir);
+  out('技能: ' + payload.summary.skills + ' / 非元阁技能: ' + payload.summary.external +
+    ' / 链接: ' + payload.summary.links + ' / 异常链接: ' + payload.summary.brokenLinks);
+  out('');
+  for (const skill of payload.skills) {
+    const origin = skill.origin === 'yotta' ? '元技能' : '非元阁技能（无更新源）';
+    const links = skill.links.length > 0 ? skill.links.map((link) => link.label || link.agent || '链接').join(', ') : '-';
+    out('  ' + skill.slug.padEnd(26) + 'v' + String(skill.version || '-').padEnd(10) +
+      origin.padEnd(22) + '链接: ' + links +
+      (skill.status === 'missing' ? '  [目标缺失]' : ''));
+  }
+  if (payload.skills.length === 0) out('  （Hub 为空；先运行 yotta-skills hub install）');
+  const broken = payload.links.filter((link) => link.status !== 'ok');
+  if (broken.length > 0) {
+    out('');
+    out('异常链接:');
+    for (const link of broken) out('  ✘ ' + link.slug + '  ' + link.target + '（' + link.status + '）');
+  }
+  out('');
+  printHubHosts(discovery, false);
+}
+
+function hubScanEngine(hubDir, discovery, opts) {
+  const direct = findVerifyEngine(hubDir, opts);
+  if (direct) return direct;
+  for (const host of discovery.hosts) {
+    if (!host.exists) continue;
+    const engine = findVerifyEngine(host.dir, opts);
+    if (engine) return engine;
+  }
+  return null;
+}
+
+function hubScanSkill(hubDir, discovery, opts, skillDir) {
+  if (opts.skipScan) {
+    return { ok: true, verdict: 'explicit-unverified', counts: null, block: false };
+  }
+  const engine = hubScanEngine(hubDir, discovery, opts);
+  if (!engine) {
+    return {
+      ok: false,
+      error: '未找到元信扫描引擎（可先安装 yotta-verify，或用 --allow-unverified 显式降级）',
+    };
+  }
+  const scan = runScan(engine, skillDir, opts);
+  if (!scan.ok) return scan;
+  const verdict = gateLib.evaluateVerdict(scan.verdict);
+  return { ok: true, verdict: scan.verdict, counts: scan.counts, block: verdict.block };
+}
+
+function printAdoptScan(payload, json) {
+  if (json) {
+    out(JSON.stringify(payload, null, 2));
+    return;
+  }
+  out('yotta-skills（元阁）v' + VERSION + ' —— Hub 收编预演（只读）');
+  out('Hub: ' + payload.hubDir);
+  out('候选 ' + payload.summary.candidates + ' / 冲突 ' + payload.summary.conflicts +
+    ' / 已在 Hub ' + payload.summary.alreadyInHub);
+  out('');
+  for (const item of payload.candidates) {
+    const mark = item.conflict ? '△' : item.inHub ? '·' : '✔';
+    out('  ' + mark + ' ' + item.slug.padEnd(26) + 'v' + String(item.version || '-').padEnd(10) +
+      (item.sourceHost || '-') + '  ' + (item.source || ''));
+    if (item.conflict) {
+      out('      冲突副本: ' + item.variants.map((variant) =>
+        (variant.host || '?') + ' v' + (variant.version || '?')).join(', '));
+    }
+  }
+  if (payload.candidates.length === 0) out('  （没有发现可收编技能）');
+}
+
+function printAdoptApply(payload, json) {
+  if (json) {
+    out(JSON.stringify(payload, null, 2));
+    return;
+  }
+  out('yotta-skills（元阁）v' + VERSION + ' —— Hub 收编');
+  out('Hub: ' + payload.hubDir);
+  for (const item of payload.results) {
+    const mark = item.status === 'imported' ? '✔' : item.status === 'skip' ? '·' : item.status === 'conflict' ? '△' : '✘';
+    out('  ' + mark + ' ' + item.slug.padEnd(26) + item.note);
+  }
+  out('汇总: 收编 ' + payload.results.filter((item) => item.status === 'imported').length +
+    ' / 跳过 ' + payload.results.filter((item) => item.status === 'skip').length +
+    ' / 冲突 ' + payload.results.filter((item) => item.status === 'conflict').length +
+    ' / 失败 ' + payload.results.filter((item) => !['imported', 'skip', 'conflict'].includes(item.status)).length);
+}
+
+function printHubDoctor(payload, json) {
+  if (json) {
+    out(JSON.stringify(payload, null, 2));
+    return;
+  }
+  out('yotta-skills（元阁）v' + VERSION + ' —— Hub doctor');
+  out('Hub: ' + payload.hubDir);
+  for (const check of payload.checks) {
+    if (check.ok && check.severity !== 'info') continue;
+    const mark = check.ok ? '✔' : check.severity === 'warning' ? '△' : '✘';
+    out('  ' + mark + ' ' + check.message + (check.hint ? '（修复: ' + check.hint + '）' : ''));
+  }
+  out('汇总: 错误 ' + payload.summary.errors + ' / 警告 ' + payload.summary.warnings);
+  if (!payload.ok) out('Hub doctor 未通过：请按上面的修复建议处理后重试。');
+}
+
+function runHub(opts) {
+  const hubDir = hubLib.resolveHubDir(opts);
+  const action = opts.hubAction || 'status';
+  const discovery = agentDiscoveryLib.discoverHosts({ homeDir: os.homedir(), env: process.env });
+
+  if (action === 'hosts' || action === 'discover') {
+    printHubHosts(discovery, opts.json);
+    return;
+  }
+
+  if (action === 'install' || action === 'update') {
+    out('Hub: ' + hubDir);
+    const result = action === 'install' ? runInstall(opts, hubDir) : runUpdate(opts, hubDir);
+    const synced = hubLib.syncHubState(hubDir, { manifest: MANIFEST });
+    const count = Object.values(synced.state.skills).filter((item) => item.status === 'present').length;
+    out('');
+    out('Hub 台账已更新: ' + count + ' 个技能；标准 ' + hubLib.STANDARD_ID);
+    if (result.failed > 0) process.exitCode = result.exitCode || 1;
+    return;
+  }
+
+  if (action === 'adopt') {
+    if (opts.as) {
+      die('hub adopt --as 暂未启用', 2, '先收编原 slug；改名 / 冲突改写放到后续里程碑，避免静默改技能身份。');
+    }
+    const scan = hubAdoptLib.scanCandidates({ hubDir, discovery });
+    if (!opts.apply) {
+      printAdoptScan(scan, opts.json);
+      return;
+    }
+    const payload = hubAdoptLib.applyCandidates({
+      hubDir,
+      candidates: scan.candidates,
+      include: opts.include,
+      force: opts.force,
+      inPlace: opts.inPlace,
+      skipScan: opts.skipScan,
+      allowUnverified: opts.allowUnverified,
+      manifest: MANIFEST,
+      homeDir: os.homedir(),
+      env: process.env,
+      scan: (skillDir) => hubScanSkill(hubDir, discovery, opts, skillDir),
+    });
+    printAdoptApply(payload, opts.json);
+    if (payload.results.some((item) => !['imported', 'skip', 'conflict'].includes(item.status))) process.exitCode = 1;
+    return;
+  }
+
+  if (action === 'refresh') {
+    if (!opts.from) die('hub refresh 缺少 --from <path>', 2, '示例：yotta-skills hub refresh my-skill --from <技能目录>。');
+    if (opts.skills.length !== 1) die('hub refresh 需要一个且仅一个技能 slug', 2, '示例：yotta-skills hub refresh my-skill --from <技能目录>。');
+    const result = hubAdoptLib.refreshFrom({
+      hubDir,
+      slug: opts.skills[0],
+      from: opts.from,
+      skipScan: opts.skipScan,
+      allowUnverified: opts.allowUnverified,
+      manifest: MANIFEST,
+      homeDir: os.homedir(),
+      env: process.env,
+      scan: (skillDir) => hubScanSkill(hubDir, discovery, opts, skillDir),
+    });
+    if (opts.json) out(JSON.stringify(result, null, 2));
+    else if (result.ok) out('已刷新: ' + result.slug + '（来源 ' + result.source + '）');
+    else out('刷新失败: ' + result.error);
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+
+  if (action === 'link') {
+    const targets = hubTargetDirs(opts, discovery);
+    let failed = 0;
+    const targetPayloads = [];
+    for (const target of targets) {
+      if (path.resolve(target.dir) === path.resolve(hubDir)) {
+        targetPayloads.push({ dir: target.dir, label: target.label, skipped: true, results: [] });
+        if (!opts.json) out('跳过 Hub 自身: ' + target.dir);
+        continue;
+      }
+      const result = hubLib.linkSkills({
+        hubDir,
+        targetDir: target.dir,
+        agentId: target.agentId,
+        label: target.label,
+        slugs: opts.skills,
+        force: opts.force,
+        dryRun: opts.dryRun,
+      });
+      targetPayloads.push({ dir: target.dir, label: target.label, results: result.results });
+      if (!opts.json) {
+        out('');
+        out('目标: ' + target.dir + '（' + target.label + '）');
+        for (const item of result.results) {
+          const mark = item.status === 'linked' ? '✔' : item.status === 'conflict' ? '△' : item.status === 'error' ? '✘' : '·';
+          out('  ' + mark + ' ' + item.slug.padEnd(26) + item.note);
+          if (item.status === 'error') failed++;
+        }
+      } else {
+        failed += result.results.filter((item) => item.status === 'error').length;
+      }
+    }
+    if (opts.json) out(JSON.stringify({ hubDir, targets: targetPayloads, failed }, null, 2));
+    if (failed > 0) process.exitCode = 1;
+    return;
+  }
+
+  if (action === 'unlink') {
+    const targets = hubTargetDirs(opts, discovery);
+    let failed = 0;
+    const targetPayloads = [];
+    for (const target of targets) {
+      const result = hubLib.unlinkSkills({
+        hubDir,
+        targetDir: target.dir,
+        slugs: opts.skills,
+        dryRun: opts.dryRun,
+      });
+      targetPayloads.push({ dir: target.dir, label: target.label, results: result.results });
+      if (!opts.json) {
+        out('');
+        out('目标: ' + target.dir + '（' + target.label + '）');
+        for (const item of result.results) {
+          const mark = item.status === 'unlinked' ? '✔' : item.status === 'refused' ? '△' : item.status === 'error' ? '✘' : '·';
+          out('  ' + mark + ' ' + item.slug.padEnd(26) + item.note);
+          if (item.status === 'error') failed++;
+        }
+      } else {
+        failed += result.results.filter((item) => item.status === 'error').length;
+      }
+    }
+    if (opts.json) out(JSON.stringify({ hubDir, targets: targetPayloads, failed }, null, 2));
+    if (failed > 0) process.exitCode = 1;
+    return;
+  }
+
+  if (action === 'status') {
+    const payload = hubLib.status({ hubDir, manifest: MANIFEST });
+    printHubStatus(payload, discovery, opts.json);
+    return;
+  }
+
+  if (action === 'doctor') {
+    const payload = hubLib.doctor({
+      hubDir,
+      manifest: MANIFEST,
+      homeDir: os.homedir(),
+      env: process.env,
+    });
+    printHubDoctor(payload, opts.json);
+    if (!payload.ok) process.exitCode = 1;
+    return;
+  }
+
+  die('未知 hub 子命令: ' + action, 2,
+    '支持 install / update / adopt / refresh / link / unlink / status / hosts / doctor。');
+}
+
 // ── main ───────────────────────────────────────────────────────────────────
 function main() {
   const node = depsLib.nodeCheck();
@@ -1826,6 +2208,10 @@ function main() {
   }
   if (command === 'hook') {
     runHook(opts);
+    return;
+  }
+  if (command === 'hub') {
+    runHub(opts);
     return;
   }
   if (command === 'rollback' && opts.list) {
