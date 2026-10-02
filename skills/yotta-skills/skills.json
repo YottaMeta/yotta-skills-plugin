@@ -15,7 +15,7 @@
       "slug": "yotta-code-quality",
       "name": "元质",
       "pkg": "@yottameta/yotta-code-quality",
-      "version": "0.4.2",
+      "version": "0.4.3",
       "domain": "quality",
       "desc": "结对式代码质量评审（十二类腐化风险 + 0-100 健康分）"
     },

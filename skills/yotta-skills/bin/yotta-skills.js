@@ -53,7 +53,7 @@ const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 const { COPY_SKIP, copyDir } = require('../lib/copy-tree');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.25.0';
+let VERSION = '0.25.1';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 function loadManifest() {
