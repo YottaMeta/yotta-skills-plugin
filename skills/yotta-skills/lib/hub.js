@@ -189,6 +189,161 @@ function hashTree(dir) {
   return hash.digest('hex');
 }
 
+/** 统计目录树中的普通文件数与总字节数（不跟随链接；跨卷复制校验用）。 */
+function treeStats(dir) {
+  let files = 0;
+  let bytes = 0;
+  const walk = (current) => {
+    for (const name of fs.readdirSync(current)) {
+      const full = path.join(current, name);
+      const stat = fs.lstatSync(full);
+      if (stat.isSymbolicLink()) continue;
+      if (stat.isDirectory()) walk(full);
+      else if (stat.isFile()) {
+        files += 1;
+        bytes += stat.size;
+      }
+    }
+  };
+  walk(path.resolve(dir));
+  return { files, bytes };
+}
+
+/** 重建链接条目：目录优先用 junction（Windows）/ dir（POSIX），文件用 file。 */
+function copyLinkEntry(src, dest) {
+  const target = fs.readlinkSync(src);
+  let kinds;
+  if (process.platform === 'win32') {
+    let isDir = null;
+    try {
+      isDir = fs.statSync(src).isDirectory();
+    } catch (_) {
+      isDir = null;
+    }
+    kinds = isDir === false ? ['file', 'junction'] : ['junction', 'file'];
+  } else {
+    let isDir = false;
+    try {
+      isDir = fs.statSync(src).isDirectory();
+    } catch (_) {
+      isDir = false;
+    }
+    kinds = [isDir ? 'dir' : 'file'];
+  }
+  let lastError = null;
+  for (const kind of kinds) {
+    try {
+      fs.symlinkSync(target, dest, kind);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('无法重建链接：' + src);
+}
+
+/** 逐条目复制目录树（保真：含链接、空目录与全部普通文件）。 */
+function copyEntryFaithful(src, dest) {
+  const stat = fs.lstatSync(src);
+  if (stat.isSymbolicLink()) {
+    copyLinkEntry(src, dest);
+    return;
+  }
+  if (stat.isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const name of fs.readdirSync(src)) {
+      const child = path.join(src, name);
+      const childStat = fs.lstatSync(child);
+      if (childStat.isSymbolicLink()) copyLinkEntry(child, path.join(dest, name));
+      else if (childStat.isDirectory()) copyEntryFaithful(child, path.join(dest, name));
+      else if (childStat.isFile()) fs.copyFileSync(child, path.join(dest, name));
+      else throw new Error('不支持的条目类型：' + child);
+    }
+    return;
+  }
+  if (stat.isFile()) {
+    fs.copyFileSync(src, dest);
+    return;
+  }
+  throw new Error('不支持的条目类型：' + src);
+}
+
+/** 删除条目：链接只删链接本身，不触碰目标。 */
+function removeEntryFaithful(entryPath) {
+  const stat = fs.lstatSync(entryPath);
+  if (stat.isSymbolicLink()) {
+    removeDirLink(entryPath);
+    return;
+  }
+  fs.rmSync(entryPath, { recursive: true, force: true });
+}
+
+/** 校验复制结果：链接比对目标，目录比对 treeHash + 文件数 + 字节数。 */
+function verifyEntryCopy(src, dest) {
+  const srcStat = fs.lstatSync(src);
+  const destStat = fs.lstatSync(dest);
+  if (srcStat.isSymbolicLink() !== destStat.isSymbolicLink()) {
+    return { ok: false, reason: '条目类型不一致' };
+  }
+  if (srcStat.isSymbolicLink()) {
+    if (fs.readlinkSync(src) !== fs.readlinkSync(dest)) {
+      return { ok: false, reason: '链接目标不一致' };
+    }
+    return { ok: true };
+  }
+  if (hashTree(src) !== hashTree(dest)) {
+    return { ok: false, reason: 'treeHash 不一致' };
+  }
+  const from = treeStats(src);
+  const to = treeStats(dest);
+  if (from.files !== to.files || from.bytes !== to.bytes) {
+    return {
+      ok: false,
+      reason: '文件数 / 字节数不一致（源 ' + from.files + ' 个 / ' + from.bytes + ' 字节；副本 ' +
+        to.files + ' 个 / ' + to.bytes + ' 字节）',
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * 跨卷安全移动：优先 rename；EXDEV（跨盘）时回退「复制 → 校验 → 删除源」。
+ * 任一步失败都不静默丢数据：源完整则回滚副本；源已不完整则保留完整副本并报出路径。
+ */
+function moveEntryAcrossDevices(src, dest, options) {
+  const opts = options || {};
+  const renameEntry = typeof opts.renameEntry === 'function' ? opts.renameEntry : fs.renameSync;
+  try {
+    renameEntry(src, dest);
+    return { method: 'rename' };
+  } catch (error) {
+    if (!error || error.code !== 'EXDEV') throw error;
+  }
+  copyEntryFaithful(src, dest);
+  let check;
+  try {
+    check = verifyEntryCopy(src, dest);
+  } catch (error) {
+    check = { ok: false, reason: error.message };
+  }
+  if (!check.ok) {
+    try { removeEntryFaithful(dest); } catch (_) { /* 保留现场供排查 */ }
+    throw new Error('跨卷复制校验失败（' + check.reason + '）；源目录未动，副本已清理');
+  }
+  try {
+    removeEntryFaithful(src);
+  } catch (error) {
+    let intact = false;
+    try { intact = verifyEntryCopy(dest, src).ok; } catch (_) { intact = false; }
+    if (intact) {
+      try { removeEntryFaithful(dest); } catch (_) { /* 保留现场供排查 */ }
+      throw new Error('跨卷复制完成但源删除失败：' + error.message + '；源目录完整，副本已回滚');
+    }
+    throw new Error('跨卷复制完成但源删除失败：' + error.message + '；完整副本保留在 ' + dest);
+  }
+  return { method: 'copy' };
+}
+
 function scanHubSkills(hubDir) {
   const root = path.resolve(hubDir);
   const result = [];
@@ -491,6 +646,7 @@ function linkSkills(options) {
   const results = [];
   const trashRoot = resolveTrashRoot(hubDir, opts);
   const makeLink = typeof opts.createLink === 'function' ? opts.createLink : createDirLink;
+  const renameEntry = typeof opts.renameEntry === 'function' ? opts.renameEntry : fs.renameSync;
   const stamp = trashRunStamp(opts.now);
   const hostName = safeHostName(opts.label || path.basename(targetDir));
   let prunedTrash = 0;
@@ -520,6 +676,7 @@ function linkSkills(options) {
       const moves = [];
       const skipped = [];
       let block = null;
+      let replaceExactLink = false;
 
       const evaluate = (copy, isExact) => {
         if (!copy) return;
@@ -532,7 +689,11 @@ function linkSkills(options) {
             return;
           }
           if (isExact) {
-            block = { status: 'conflict', note: '目标已存在指向 Hub 之外的链接（默认跳过；确认后可加 --force 替换）' };
+            if (force) {
+              replaceExactLink = true;
+            } else {
+              block = { status: 'conflict', note: '目标已存在指向 Hub 之外的链接（默认跳过；确认后可加 --force 替换）' };
+            }
           } else {
             skipped.push(copy.name + '（外部链接，保留）');
           }
@@ -593,7 +754,8 @@ function linkSkills(options) {
           slug,
           status: 'would-converge',
           target,
-          note: '将收敛 ' + moves.length + ' 份旧副本（移入回收站，保留 ' + TRASH_RETENTION_DAYS + ' 天）后建立链接：' +
+          note: '将收敛 ' + moves.length + ' 份旧副本（移入回收站，保留 ' + TRASH_RETENTION_DAYS + ' 天）' +
+            (replaceExactLink ? '并替换指向 Hub 之外的链接' : '') + '后建立链接：' +
             moves.map((item) => item.name).join('、'),
           moves: moves.map((item) => ({ from: item.dir, name: item.name, version: item.version || null })),
           trashDir: trashRoot,
@@ -601,11 +763,14 @@ function linkSkills(options) {
         continue;
       }
       if (moves.length === 0 && dryRun) {
-        results.push({ slug, status: 'would-link', target, note: '将建立链接' });
+        results.push(replaceExactLink
+          ? { slug, status: 'would-replace', target, note: '将替换指向 Hub 之外的链接并建立链接' }
+          : { slug, status: 'would-link', target, note: '将建立链接' });
         continue;
       }
       if (moves.length === 0) {
         try {
+          if (replaceExactLink) removeDirLink(target);
           makeLink(skill.dir, target);
           const index = links.findIndex((item) => item.slug === slug && samePath(item.dir || '', targetDir));
           const record = {
@@ -624,15 +789,25 @@ function linkSkills(options) {
             slug,
             status: 'linked',
             target,
-            note: '已建立链接' + (skipped.length ? '（保留：' + skipped.join('、') + '）' : ''),
+            note: (replaceExactLink
+              ? '已替换指向 Hub 之外的链接并建立链接（仅移除链接本身，目标目录未动）'
+              : '已建立链接') + (skipped.length ? '（保留：' + skipped.join('、') + '）' : ''),
           });
-          appendAudit(hubDir, { event: 'link', slug, target, hubDir: skill.dir, backup: null });
+          appendAudit(hubDir, {
+            event: 'link',
+            slug,
+            target,
+            hubDir: skill.dir,
+            backup: null,
+            ...(replaceExactLink ? { replacedExternalLink: true } : {}),
+          });
         } catch (error) {
           results.push({
             slug,
             status: 'error',
             target,
-            note: error.message + '（未静默降级为复制；请检查目录权限或改用 --dir 指定可写目录）',
+            note: (replaceExactLink ? '替换失败：' : '') + error.message +
+              '（未静默降级为复制；请检查目录权限或改用 --dir 指定可写目录）',
           });
         }
         continue;
@@ -642,10 +817,19 @@ function linkSkills(options) {
         for (const item of moves) {
           const dest = path.join(trashRoot, stamp, hostName, item.name);
           fs.mkdirSync(path.dirname(dest), { recursive: true });
-          fs.renameSync(item.dir, dest);
-          moved.push({ from: item.dir, to: dest, name: item.name, version: item.version || null });
+          const transfer = moveEntryAcrossDevices(item.dir, dest, { renameEntry });
+          moved.push({
+            from: item.dir,
+            to: dest,
+            name: item.name,
+            version: item.version || null,
+            method: transfer.method,
+          });
         }
-        if (!exactHealthy) makeLink(skill.dir, target);
+        if (!exactHealthy) {
+          if (replaceExactLink) removeDirLink(target);
+          makeLink(skill.dir, target);
+        }
         const index = links.findIndex((item) => item.slug === slug && samePath(item.dir || '', targetDir));
         const record = {
           slug,
@@ -660,11 +844,14 @@ function linkSkills(options) {
         };
         if (index >= 0) links[index] = record;
         else links.push(record);
+        const copiedCount = moved.filter((item) => item.method === 'copy').length;
         results.push({
           slug,
           status: 'linked',
           target,
           note: '已收敛 ' + moved.length + ' 份旧副本（回收站保留 ' + TRASH_RETENTION_DAYS + ' 天）并建立链接' +
+            (replaceExactLink ? '（已替换指向 Hub 之外的链接；仅移除链接本身）' : '') +
+            (copiedCount ? '（其中 ' + copiedCount + ' 份跨卷复制，校验通过）' : '') +
             (skipped.length ? '；保留：' + skipped.join('、') : ''),
           moved,
           trashDir: trashRoot,
@@ -677,13 +864,14 @@ function linkSkills(options) {
           hubVersion: skill.version,
           moved,
           trashDir: trashRoot,
+          ...(replaceExactLink ? { replacedExternalLink: true } : {}),
         });
       } catch (error) {
         let restored = true;
         for (const item of moved.slice().reverse()) {
           try {
             fs.mkdirSync(path.dirname(item.from), { recursive: true });
-            fs.renameSync(item.to, item.from);
+            moveEntryAcrossDevices(item.to, item.from, { renameEntry });
           } catch (_) { restored = false; }
         }
         results.push({
@@ -1009,6 +1197,7 @@ module.exports = {
   writeLinkState,
   appendAudit,
   hashTree,
+  moveEntryAcrossDevices,
   scanHubSkills,
   syncHubState,
   familySlugSet,
