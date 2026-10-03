@@ -132,6 +132,10 @@
   .cmd code{flex:1;min-width:0;word-break:break-all;color:var(--text)}
   .cmd .why{color:var(--faint);font-size:11px}
   .note{color:var(--muted);font-size:12px;margin-top:8px}
+  .cmd-detail{border:1px solid var(--line);border-radius:6px;background:var(--panel2);margin-top:8px;padding:0 11px;min-width:0}
+  .cmd-detail summary{cursor:pointer;padding:9px 0;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+  .cmd-detail .note{padding:0 0 8px}
+  .cmd-detail .cmd{margin:0 0 8px}
 
   @media (max-width:980px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media (max-width:760px){
@@ -188,7 +192,10 @@
       <div class="grid g4" id="ovCards"></div>
       <div class="section" id="ovDoctor"></div>
       <div class="section grid g2">
-        <div class="panel"><h3>Hub 内容</h3><div class="faint">技能真源在 Hub 目录，宿主目录通过链接分发。</div><div class="list" id="ovSkills"></div></div>
+        <div class="panel"><h3>Hub 内容</h3><div class="faint">技能真源在 Hub 目录，宿主目录通过链接分发。</div>
+          <label class="search section" style="min-width:100%"><svg class="sv" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="ovSkillFilter" placeholder="过滤技能（输入后显示全部匹配）"></label>
+          <div class="list" id="ovSkills"></div>
+        </div>
         <div class="panel"><h3>最近动作</h3><div class="faint">收编 / 链接 / 解除都写入 Hub 审计。</div><div class="list" id="ovAudit"></div></div>
       </div>
       <div class="section panel">
@@ -286,9 +293,18 @@
     <section class="view" id="view-cli">
       <div class="banner">
         <svg class="sv" viewBox="0 0 24 24"><path d="m4 7 5 5-5 5"/><path d="M12 19h8"/></svg>
-        <div><div class="banner-title">高级 CLI</div><div class="banner-body">低频 / 长尾命令在这里复制到终端执行；网页不代替终端运行安装与更新。</div></div>
+        <div><div class="banner-title">高级 CLI（全量）</div><div class="banner-body">全部命令 + 人话说明 + 可复制示例；网页只展示与复制，不代替终端执行安装、更新与删除。</div></div>
       </div>
-      <div id="cliGroups"></div>
+      <div class="section panel">
+        <div class="shead"><h2>命令速查</h2><span class="faint" id="cliMeta">加载中…</span></div>
+        <div id="cliQuick"></div>
+      </div>
+      <div class="section panel">
+        <details id="cliFullWrap">
+          <summary>完整命令与参数（点击展开）</summary>
+          <div id="cliFull"></div>
+        </details>
+      </div>
     </section>
   </main>
 </div>
@@ -299,7 +315,7 @@
 <script>
 (function () {
   var TOKEN = (document.querySelector('meta[name="yotta-view-token"]') || {}).content || '';
-  var state = { view: 'overview', overview: null, hosts: null, adopt: null, selected: {}, records: null, tab: 'snapshots', hostFilter: '', adoptFilter: '' };
+  var state = { view: 'overview', overview: null, hosts: null, adopt: null, selected: {}, records: null, tab: 'snapshots', hostFilter: '', adoptFilter: '', ovSkillFilter: '' };
 
   function $(sel) { return document.querySelector(sel); }
   function esc(value) {
@@ -380,7 +396,7 @@
     links: { title: '链接与体检', sub: '断链 / 漂移 / 目标缺失在哪、怎么修', load: loadLinks },
     records: { title: '记录与回滚', sub: '安装、收编、链接都做了什么，怎么退回', load: loadRecords },
     route: { title: '路由与编排', sub: '一句话需求该用哪些技能、缺什么（只读）', load: null },
-    cli: { title: '高级 CLI', sub: '低频命令速查与复制', load: null }
+    cli: { title: '高级 CLI', sub: '全量命令速查与复制（与 CLI --help 同源）', load: null }
   };
   var loadSeq = 0;
   function showLoad(text) {
@@ -450,10 +466,7 @@
       statCard('异常链接', d.status.summary.brokenLinks, d.status.summary.brokenLinks ? '需要处理' : '全部正常', d.status.summary.brokenLinks ? 'danger' : 'ok') +
       statCard('Doctor', d.doctor.ok ? '通过' : '未通过', '错误 ' + d.doctor.summary.errors + ' / 警告 ' + d.doctor.summary.warnings, d.doctor.ok ? 'ok' : 'danger');
     $('#ovDoctor').innerHTML = doctorBanner(d.doctor);
-    var skills = d.status.skills || [];
-    $('#ovSkills').innerHTML = skills.length ? skills.slice(0, 8).map(function (s) {
-      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(s.slug) + '</div><div class="row-meta">v' + esc(s.version || '-') + ' · ' + esc(s.origin === 'external' ? '外部来源' : '元阁家族') + ' · 链接 ' + (s.links || []).length + '</div></div><span class="badge ' + (s.status === 'present' ? 'ok' : 'danger') + '">' + esc(s.status === 'present' ? '已入库' : '缺失') + '</span></div>';
-    }).join('') : '<div class="empty">Hub 还是空的。先在「收编向导」把已装技能收编进来。</div>';
+    renderOverviewSkills();
     var audit = (d.audit && d.audit.recent) || [];
     $('#ovAudit').innerHTML = audit.length ? audit.slice().reverse().map(function (a) {
       return '<div class="row"><div class="row-main"><div class="row-title">' + esc(a.event || '动作') + ' · ' + esc(a.slug || '') + '</div><div class="row-meta">' + esc(fmtTime(a.at)) + (a.verdict ? ' · ' + esc(a.verdict) : '') + '</div></div></div>';
@@ -461,6 +474,53 @@
     $('#ovHubDir').textContent = d.hubDir;
     $('#copyHubDir').onclick = function () { copyText(d.hubDir); };
   }
+
+  function renderOverviewSkills() {
+    var d = state.overview;
+    if (!d) return;
+    var skills = (d.status && d.status.skills) || [];
+    var filter = state.ovSkillFilter.trim().toLowerCase();
+    var list = filter
+      ? skills.filter(function (s) { return String(s.slug || '').toLowerCase().indexOf(filter) >= 0; })
+      : skills.slice(0, 8);
+    $('#ovSkills').innerHTML = list.length ? list.map(function (s) {
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(s.slug) + '</div><div class="row-meta">v' + esc(s.version || '-') + ' · ' + esc(s.origin === 'external' ? '外部来源' : '元阁家族') + ' · 链接 ' + (s.links || []).length + '</div></div>' +
+        '<span class="badge ' + (s.status === 'present' ? 'ok' : 'danger') + '">' + esc(s.status === 'present' ? '已入库' : '缺失') + '</span>' +
+        '<div class="row-actions"><button class="btn small danger" data-remove-skill="' + esc(s.slug) + '">删除</button></div></div>';
+    }).join('') : '<div class="empty">' + (filter ? '没有匹配的技能。' : 'Hub 还是空的。先在「收编向导」把已装技能收编进来。') + '</div>';
+  }
+  $('#ovSkillFilter').addEventListener('input', function () {
+    state.ovSkillFilter = $('#ovSkillFilter').value || '';
+    renderOverviewSkills();
+  });
+  $('#ovSkills').addEventListener('click', async function (e) {
+    var b = e.target.closest('[data-remove-skill]');
+    if (!b) return;
+    var slug = b.dataset.removeSkill;
+    var plan = await api('/api/skills/remove-plan?slug=' + encodeURIComponent(slug));
+    if (!plan || plan.error) { toast((plan && plan.error) || '影响预览失败'); return; }
+    var targets = plan.targets || [];
+    var willUnlink = targets.filter(function (t) { return t.action === 'unlink'; });
+    var kept = targets.filter(function (t) { return t.action === 'keep'; });
+    var rows = targets.map(function (t) {
+      var tone = t.action === 'unlink' ? 'warn' : t.action === 'keep' ? 'info' : '';
+      return '<div class="result"><span class="badge ' + tone + '">' + esc(t.action === 'unlink' ? '将清理' : t.action === 'keep' ? '保留' : '无动作') + '</span><span class="mono">' + esc(t.dir) + '</span><span class="faint">' + esc(t.note || '') + '</span></div>';
+    }).join('');
+    var body = '<p class="label">将清理 ' + willUnlink.length + ' 条宿主链接（含死链）' +
+      (plan.hubPresent ? '，并把 Hub 目录移入回收站（保留 7 天）' : '；Hub 目录已缺失，仅清理残留') +
+      '；保留 ' + kept.length + ' 项宿主真副本 / 外部链接。</p>' +
+      '<div class="result-list">' + (rows || '<div class="faint">没有需要处理的宿主目录。</div>') + '</div>' +
+      '<div class="section"><label class="label">输入完整技能名确认：' + esc(slug) + '</label><input id="removeConfirmSlug" placeholder="' + esc(slug) + '"></div>';
+    confirmModal('删除 Hub 技能 ' + slug + '？', body, '删除', true, async function () {
+      var typed = ($('#removeConfirmSlug') && $('#removeConfirmSlug').value || '').trim();
+      if (typed !== slug) { toast('技能名不匹配'); return; }
+      var r = await api('/api/skills/remove', { body: { slug: slug, confirm: 'remove', confirmSlug: typed } });
+      if (r.error) { toast(r.error); return; }
+      closeModal();
+      toast(r.verdict === 'cleanup-only' ? '已清理残留（Hub 目录原本缺失）' : '已删除 ' + slug + '（目录已入回收站）');
+      loadOverview();
+    });
+  });
 
   async function loadHosts() {
     var d = await api('/api/hosts');
@@ -722,40 +782,56 @@
     if (b) copyText(b.dataset.copyCmd);
   });
 
-  var CLI_GROUPS = [
-    { name: 'Hub 发现与安装', items: [
-      { cmd: 'yotta-skills hub hosts', why: '发现本机宿主与技能目录' },
-      { cmd: 'yotta-skills hub install', why: '把元阁家族装进 Hub 真源' },
-      { cmd: 'yotta-skills hub adopt --scan', why: '只读预演收编候选与冲突' },
-      { cmd: 'yotta-skills hub adopt --apply', why: '执行收编（默认复制保真）' },
-    ] },
-    { name: '链接与体检', items: [
-      { cmd: 'yotta-skills hub link --all', why: '链接到已核实宿主（默认范围）' },
-      { cmd: 'yotta-skills hub link --all --include-discovered', why: '显式纳入自动发现目录' },
-      { cmd: 'yotta-skills hub link --agent codex', why: '只链接到一个宿主' },
-      { cmd: 'yotta-skills hub unlink --all', why: '只删链接，不动 Hub 真源' },
-      { cmd: 'yotta-skills hub status', why: '查看技能 / 来源 / 链接' },
-      { cmd: 'yotta-skills hub doctor', why: '检查断链 / 缺失 / slug 不一致' },
-    ] },
-    { name: '安装与更新', items: [
-      { cmd: 'yotta-skills update --installed-only --dir <技能目录>', why: '只维护已装元技能' },
-      { cmd: 'yotta-skills update --check', why: '只读检查更新' },
-      { cmd: 'yotta-skills rollback --list', why: '查看可回滚快照' },
-      { cmd: 'yotta-skills rollback --slug <技能> --dir <技能目录>', why: '回滚单个技能' },
-    ] },
-    { name: '路由与使用', items: [
-      { cmd: 'yotta-skills --route "帮我做发布前质量检查"', why: '静态编排路由 + 动态路由块' },
-      { cmd: 'yotta-skills --list', why: '列出全家技能与版本' },
-      { cmd: 'yotta-skills --inventory --json', why: '盘点本机已装技能' },
-    ] },
-  ];
-  $('#cliGroups').innerHTML = CLI_GROUPS.map(function (g) {
-    return '<div class="panel cmd-group"><h3>' + esc(g.name) + '</h3>' + g.items.map(function (item) {
-      return '<div class="cmd"><code>' + esc(item.cmd) + '</code><span class="why">' + esc(item.why) + '</span><button class="btn small" data-copy-cmd="' + esc(item.cmd) + '">复制</button></div>';
+  /* 高级 CLI：/api/help 单一真源（与 CLI --help 同源） */
+  function findHelpEntry(groups, ref) {
+    var seg = String(ref).split(' ');
+    for (var i = 0; i < groups.length; i++) {
+      var cmds = groups[i].commands || [];
+      for (var j = 0; j < cmds.length; j++) {
+        var c = cmds[j];
+        if (c.name !== seg[0]) continue;
+        if (seg.length === 1) return c;
+        var subs = c.subcommands || [];
+        for (var k = 0; k < subs.length; k++) if (subs[k].name === seg[1]) return subs[k];
+      }
+    }
+    return null;
+  }
+  function renderCliHelp(d) {
+    if (!d || d.error) { $('#cliMeta').textContent = '帮助加载失败'; return; }
+    var total = 0;
+    (d.groups || []).forEach(function (g) { total += (g.commands || []).length; });
+    $('#cliMeta').textContent = 'v' + (d.version || '-') + ' · 命令 ' + total + ' · 选项 ' + (d.options || []).length;
+    $('#cliQuick').innerHTML = (d.quick || []).map(function (g) {
+      return '<div class="cmd-group"><h3>' + esc(g.group) + '</h3>' + (g.items || []).map(function (item) {
+        var meta = findHelpEntry(d.groups, item.cmd) || {};
+        return '<div class="cmd"><code>' + esc(item.example) + '</code><span class="why">' + esc(meta.what || '') +
+          (item.note ? ' · ' + esc(item.note) : '') + '</span>' +
+          (item.danger ? '<span class="badge danger">危险</span>' : '') +
+          '<button class="btn small" data-copy-cmd="' + esc(item.example) + '">复制</button></div>';
+      }).join('') + '</div>';
+    }).join('');
+    var full = (d.groups || []).map(function (g) {
+      return '<div class="cmd-group"><h3>' + esc(g.group) + '</h3>' + (g.commands || []).map(function (c) {
+        var opts = (c.options || []).length
+          ? '<div class="note">常用选项: ' + c.options.map(function (f) { return '<code>' + esc(f) + '</code>'; }).join(' ') + '</div>'
+          : '';
+        var subs = (c.subcommands || []).map(function (s) {
+          return '<div class="cmd"><code>' + esc('yotta-skills ' + s.usage) + '</code><span class="why">' + esc(s.what || '') + '</span><button class="btn small" data-copy-cmd="' + esc('yotta-skills ' + s.usage) + '">复制</button></div>';
+        }).join('');
+        return '<details class="cmd-detail"><summary><code>' + esc('yotta-skills ' + c.usage) + '</code> <span class="why">' + esc(c.what || '') + '</span></summary>' +
+          (c.when ? '<div class="note">' + esc(c.when) + '</div>' : '') + opts + subs + '</details>';
+      }).join('') + '</div>';
+    }).join('');
+    full += '<div class="cmd-group"><h3>完整选项</h3>' + (d.options || []).map(function (o) {
+      return '<div class="cmd"><code>' + esc(o.flag + (o.arg ? ' ' + o.arg : '')) + '</code><span class="why">' + esc(o.what || '') +
+        (o.when ? ' · ' + esc(o.when) : '') + (o.caution ? ' · ⚠ ' + esc(o.caution) : '') + '</span></div>';
     }).join('') + '</div>';
-  }).join('');
+    $('#cliFull').innerHTML = full;
+  }
+  api('/api/help').then(renderCliHelp);
   document.addEventListener('click', function (e) {
-    var b = e.target.closest('#cliGroups [data-copy-cmd]');
+    var b = e.target.closest('#view-cli [data-copy-cmd]');
     if (b) copyText(b.dataset.copyCmd);
   });
 

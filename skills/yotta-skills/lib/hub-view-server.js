@@ -32,6 +32,7 @@ const routeFeaturesLib = require('./route-features');
 const routeDynamicLib = require('./route-dynamic');
 const providerLib = require('./provider');
 const usageLib = require('./usage-journal');
+const cliHelpLib = require('./cli-help');
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 8789;
@@ -41,7 +42,7 @@ const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
 const TOKEN_HEADER = 'x-yotta-view-token';
 const TOKEN_PLACEHOLDER = '__YOTTA_VIEW_TOKEN__';
-const CONFIRM = { unlink: 'unlink', rollback: 'rollback' };
+const CONFIRM = { unlink: 'unlink', rollback: 'rollback', remove: 'remove' };
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 function nowIso() {
@@ -372,6 +373,65 @@ function restoreFromSnapshot(ctx, slug, snapshotPath) {
   };
 }
 
+/**
+ * 面板删除技能的目标范围 = 已核实宿主 ∪ 本技能链接台账（与 CLI 默认范围一致）。
+ */
+function removeTargets(ctx, slug) {
+  const found = discovery(ctx);
+  const targets = [];
+  const seen = new Set();
+  const add = (dir, label, agentId) => {
+    if (!dir) return;
+    const resolved = path.resolve(dir);
+    const key = normalizeDir(resolved);
+    if (seen.has(key)) return;
+    seen.add(key);
+    targets.push({ dir: resolved, label: label || '指定目录', agentId: agentId || null });
+  };
+  for (const host of found.hosts || []) {
+    if (!host.exists || host.bridgeOnly || !host.verified) continue;
+    add(host.dir, host.label, host.agentId);
+  }
+  for (const item of hubLib.readLinkState(ctx.hubDir).links.filter((link) => link.slug === slug)) {
+    add(item.dir, item.label || '台账记录目录', item.agent);
+  }
+  return targets;
+}
+
+function removePlanPayload(ctx, slug) {
+  return hubLib.removeSkills({
+    hubDir: ctx.hubDir,
+    slug,
+    targets: removeTargets(ctx, slug),
+    dryRun: true,
+    manifest: ctx.manifest,
+    homeDir: ctx.homeDir,
+    env: ctx.env,
+  });
+}
+
+function writeRemove(ctx, body) {
+  if (String(body.confirm || '') !== CONFIRM.remove) {
+    return { code: 400, payload: { error: '破坏性操作确认不匹配；请确认后再执行。' } };
+  }
+  const slug = String(body.slug || '').trim().toLowerCase();
+  if (!SLUG_RE.test(slug)) return { code: 400, payload: { error: '技能 slug 非法。' } };
+  if (String(body.confirmSlug || '') !== slug) {
+    return { code: 400, payload: { error: '技能名确认不匹配；请输入完整 slug。' } };
+  }
+  const payload = hubLib.removeSkills({
+    hubDir: ctx.hubDir,
+    slug,
+    targets: removeTargets(ctx, slug),
+    dryRun: false,
+    manifest: ctx.manifest,
+    homeDir: ctx.homeDir,
+    env: ctx.env,
+  });
+  const code = payload.verdict === 'failed' ? 500 : payload.verdict === 'not-found' ? 404 : 200;
+  return { code, payload };
+}
+
 function writeAdopt(ctx, body) {
   if (body.skipScan || body.allowUnverified) {
     return {
@@ -558,6 +618,19 @@ function handleGet(ctx, pathname, url, res) {
     });
   }
   if (pathname === '/api/overview') return json(res, 200, overviewPayload(ctx));
+  if (pathname === '/api/help') {
+    return json(res, 200, {
+      version: ctx.version || '',
+      groups: cliHelpLib.CLI_HELP_MODEL,
+      quick: cliHelpLib.CLI_HELP_QUICK,
+      options: cliHelpLib.CLI_GLOBAL_OPTIONS,
+    });
+  }
+  if (pathname === '/api/skills/remove-plan') {
+    const slug = String(url.searchParams.get('slug') || '').trim().toLowerCase();
+    if (!SLUG_RE.test(slug)) return json(res, 400, { error: '技能 slug 非法。' });
+    return json(res, 200, removePlanPayload(ctx, slug));
+  }
   if (pathname === '/api/hosts') return json(res, 200, hostsPayload(ctx));
   if (pathname === '/api/adopt/scan') return json(res, 200, adoptScanPayload(ctx));
   if (pathname === '/api/links') return json(res, 200, linksPayload(ctx));
@@ -590,6 +663,7 @@ function handlePost(ctx, pathname, req, res) {
       if (pathname === '/api/links/apply') return writeLink(ctx, body);
       if (pathname === '/api/links/remove') return writeUnlink(ctx, body);
       if (pathname === '/api/rollback/apply') return writeRollback(ctx, body);
+      if (pathname === '/api/skills/remove') return writeRemove(ctx, body);
       return { code: 404, payload: { error: 'not found' } };
     };
     ctx.queue(run)

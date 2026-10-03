@@ -86,10 +86,34 @@ npx -y @yottameta/yotta-skills hub link --all --include-discovered
 # 只删除链接，不动 Hub 真源；清理范围外链接用 --dir <目录> 精确指定
 npx -y @yottameta/yotta-skills hub unlink --all
 
+# 指定智能体分发 / 解除（只影响该宿主；Hub 真源保留）
+npx -y @yottameta/yotta-skills hub link yotta-memory --agent codex
+npx -y @yottameta/yotta-skills hub unlink yotta-memory --agent codex
+
+# 彻底删除 Hub 技能：全宿主清链接（含死链）+ 目录入回收站 + 清台账 + 审计
+npx -y @yottameta/yotta-skills hub remove my-skill --dry-run
+
 # 查看来源、版本、链接宿主与异常
 npx -y @yottameta/yotta-skills hub status
 npx -y @yottameta/yotta-skills hub doctor
 ```
+
+## 删除技能（hub remove，0.28.3 起）
+
+`hub remove <slug>` 五阶段 fail-closed：
+
+1. **preflight（只读）**：逐目录分类健康链接 / 死链 / 漂移链接 / 指向 Hub 外链接 /
+   真副本 / 不存在；`--dry-run` 到此为止（零写入）。
+2. **unlink**：只删指向 Hub 的链接（含死链）；报错即中止，不进入下一步。
+3. **trash**：Hub 目录移入 `<hub>/../trash/<stamp>/hub-remove/<slug>`，保留 7 天；
+   跨卷自动回退「复制 → 校验 → 删源」。
+4. **ledger**：定向删 `.yotta-hub.json` 条目 + 过滤 `.yotta-links.json`
+   （不调 `syncHubState`，防止把删除记回 `missing`）。
+5. **审计 + 汇总**：写 `remove` 审计；无痕迹时退出码 4。
+
+边界：真副本 / 外部链接一律保留并报告（真副本版本高于 Hub 时逐条提示）；
+`--agent` / `--dir` 收窄仅用于「Hub 目标已缺失」的死链清理；恢复路径 =
+从回收站取回 + `hub install` 重装 + `hub link` 重建。
 
 ## 宿主发现口径
 
@@ -121,9 +145,11 @@ npx -y @yottameta/yotta-skills view --port 8790
 
 面板只在 `127.0.0.1`（默认 8789）监听，零远程资源、零遥测，只读写 Hub
 目录与台账 / 证据文件，不读元忆、不改宿主全局配置。六个视图：概览、宿主矩阵、
-收编向导、链接与体检、记录与回滚、路由与编排，另附高级 CLI 页。
+收编向导、链接与体检、记录与回滚、路由与编排，另附**全量 CLI 页**（全部命令 /
+子命令 + 人话说明 + 可复制示例 + 完整选项，与 `--help` 单一真源）。
 
-动作边界：收编 / 链接 / 解除 / 回滚可执行（预览 → 确认 → 执行 → 证据）；
+动作边界：收编 / 链接 / 解除 / 回滚 / 删除技能可执行（预览 → 确认 → 执行 → 证据；
+删除技能需手输 slug 二次确认）；概览 Hub 内容行可过滤后直接删除技能；
 install / update / refresh 只在高级 CLI 页给出可复制命令，不在网页执行。
 写操作需要页面会话令牌，解除与回滚需要破坏性确认串；收编始终逐项运行元信
 扫描，high / critical 阻断。
@@ -132,6 +158,8 @@ install / update / refresh 只在高级 CLI 页给出可复制命令，不在网
 
 - `unlink` 只删除 lstat 确认为链接、且 readlink 目标位于 Hub 内的路径。
 - 真目录 / 非 Hub 链接一律拒绝删除；`--force` 对真目录先备份再替换。
+- `remove` 只删指向 Hub 的链接与 Hub 内目录；链接清理报错即中止、不删 Hub；
+  Hub 目录入回收站保留 7 天，可恢复。
 - 收敛只动元技能在宿主目录中的旧副本：移入回收站（7 天）而非直删；
   不碰插件与宿主 MCP 配置；外部技能源文件绝不修改。
 - Hub 仅本机使用，不对外分发技能内容。

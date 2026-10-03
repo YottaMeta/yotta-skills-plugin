@@ -1017,6 +1017,277 @@ function unlinkSkills(options) {
   return { hubDir, targetDir, dryRun, results };
 }
 
+/**
+ * 删除 Hub 技能：全宿主清理指向 Hub 的链接（含死链）→ Hub 目录移入回收站 →
+ * 定向清 Hub 台账与链接台账 → 写审计。
+ *
+ * 五阶段 fail-closed：
+ *   1. preflight（只读分类，dry-run 到此为止）
+ *   2. unlink（只删指向 Hub 的链接；报错即中止，不进入 3）
+ *   3. trash（目录移入回收站保留 7 天；跨卷走复制 + 校验 + 删源）
+ *   4. ledger（定向删 Hub 台账条目 + 过滤链接台账；不调 syncHubState，防记回 missing）
+ *   5. 汇总（含版本闸门报告）
+ *
+ * options:
+ * - hubDir / slug（必填）
+ * - targets: [{ dir, label, agentId }]（调用方解析范围；核心不做范围判断）
+ * - dryRun / trashRoot / trashRetentionDays / now
+ * - renameEntry / unlink（测试注入点）
+ */
+function removeSkills(options) {
+  const opts = options || {};
+  const hubDir = path.resolve(opts.hubDir);
+  const slug = String(opts.slug || '').trim().toLowerCase();
+  const dryRun = Boolean(opts.dryRun);
+  const unlinkFn = typeof opts.unlink === 'function' ? opts.unlink : unlinkSkills;
+  const targets = (Array.isArray(opts.targets) ? opts.targets : [])
+    .filter((item) => item && item.dir)
+    .map((item) => ({
+      dir: path.resolve(item.dir),
+      label: item.label || '指定目录',
+      agentId: item.agentId || null,
+    }));
+  const trashRoot = resolveTrashRoot(hubDir, opts);
+  const skillDir = path.join(hubDir, slug);
+  const compact = (plan) => ({
+    dir: plan.dir,
+    label: plan.label,
+    status: plan.status,
+    action: plan.action,
+    note: plan.note,
+    ...(plan.version ? { version: plan.version } : {}),
+    ...(plan.versionGate ? { versionGate: true } : {}),
+    ...(plan.drift ? { drift: true } : {}),
+    ...(plan.broken ? { broken: true } : {}),
+  });
+
+  let hubPathKind = 'missing';
+  let hubEntry = null;
+  try {
+    const stat = fs.lstatSync(skillDir);
+    hubPathKind = stat.isSymbolicLink() ? 'link' : stat.isDirectory() ? 'directory' : 'file';
+  } catch (_) {
+    hubPathKind = 'missing';
+  }
+  if (hubPathKind === 'file') {
+    return {
+      hubDir,
+      slug,
+      dryRun,
+      verdict: 'failed',
+      ok: false,
+      exitCode: 1,
+      hubPresent: false,
+      hubPathKind,
+      hubVersion: null,
+      targets: [],
+      unlinkable: 0,
+      kept: [],
+      failed: [{ dir: skillDir, note: 'Hub 内同名路径是普通文件；fail-closed，拒绝删除' }],
+      trashedTo: null,
+    };
+  }
+  if (hubPathKind !== 'missing') {
+    hubEntry = scanHubSkills(hubDir).find((item) => samePath(item.dir, skillDir)) || null;
+  }
+  const hubVersion = hubEntry && hubEntry.version ? hubEntry.version : '';
+
+  // ── 1. preflight（只读） ────────────────────────────────────────────────
+  const plans = targets.map((target) => {
+    const targetPath = path.join(target.dir, slug);
+    const current = classifyTarget(targetPath, hubDir);
+    if (current.kind === 'missing') {
+      return {
+        dir: target.dir,
+        label: target.label,
+        target: targetPath,
+        action: 'none',
+        status: 'missing',
+        note: '目标不存在',
+      };
+    }
+    if (current.kind === 'link') {
+      if (!current.inHub) {
+        return {
+          dir: target.dir,
+          label: target.label,
+          target: targetPath,
+          action: 'keep',
+          status: 'refused',
+          note: '链接指向 Hub 之外；fail-closed 保留',
+        };
+      }
+      const drift = !samePath(current.target, skillDir);
+      const broken = current.targetExists === false;
+      return {
+        dir: target.dir,
+        label: target.label,
+        target: targetPath,
+        action: 'unlink',
+        status: 'link',
+        drift,
+        broken,
+        note: broken
+          ? '死链（Hub 目标缺失），将清理'
+          : drift
+            ? '链接指向 Hub 内其它技能，将一并清理'
+            : '指向本技能的链接，将清理',
+      };
+    }
+    if (current.kind === 'directory') {
+      const meta = readSkillMeta(targetPath);
+      const version = meta && meta.version ? meta.version : '';
+      const higher = Boolean(version && hubVersion && compareVersions(version, hubVersion) > 0);
+      return {
+        dir: target.dir,
+        label: target.label,
+        target: targetPath,
+        action: 'keep',
+        status: 'kept-directory',
+        version: version || null,
+        versionGate: higher,
+        note: higher
+          ? '宿主真副本 v' + version + ' 高于 Hub v' + hubVersion + '；保留（先确认该副本）'
+          : '宿主真副本，保留（只删链接）',
+      };
+    }
+    return {
+      dir: target.dir,
+      label: target.label,
+      target: targetPath,
+      action: 'keep',
+      status: 'kept-file',
+      note: '普通文件，保留',
+    };
+  });
+
+  const stateSnapshot = readHubState(hubDir);
+  const hasStateEntry = Boolean(stateSnapshot.skills && stateSnapshot.skills[slug]);
+  const hubPresent = hubPathKind === 'directory' || hubPathKind === 'link';
+  const unlinkable = plans.filter((plan) => plan.action === 'unlink').length;
+  const kept = plans.filter((plan) => plan.action === 'keep');
+  const base = {
+    hubDir,
+    slug,
+    dryRun,
+    hubPresent,
+    hubPathKind,
+    hubVersion: hubVersion || null,
+    targets: plans.map(compact),
+    unlinkable,
+    kept: kept.map(compact),
+  };
+  if (dryRun) {
+    return { ...base, verdict: 'dry-run', ok: true, exitCode: 0, trashedTo: null };
+  }
+
+  // ── 2. unlink（含死链；报错即中止，不删 Hub） ───────────────────────────
+  const unlinked = [];
+  const failed = [];
+  for (const plan of plans) {
+    if (plan.action !== 'unlink') continue;
+    const result = unlinkFn({ hubDir, targetDir: plan.dir, slugs: [slug], dryRun: false });
+    const item = (result.results || [])[0] || { status: 'error', note: '未知结果' };
+    plan.status = item.status;
+    plan.note = item.note || plan.note;
+    if (item.status === 'error') failed.push({ dir: plan.dir, note: item.note });
+    else unlinked.push({ dir: plan.dir, status: item.status, note: item.note });
+  }
+  if (failed.length > 0) {
+    if (fs.existsSync(hubDir)) {
+      try {
+        appendAudit(hubDir, {
+          event: 'remove',
+          slug,
+          verdict: 'failed',
+          reason: 'unlink-error',
+          targets: plans.map(compact),
+          removedLinks: unlinked.length,
+        });
+      } catch (_) { /* audit best-effort */ }
+    }
+    return { ...base, verdict: 'failed', ok: false, exitCode: 1, unlinked, failed, trashedTo: null };
+  }
+
+  // ── 3. trash（Hub 目录入回收站；失败即中止） ────────────────────────────
+  let trashedTo = null;
+  let method = null;
+  if (hubPresent) {
+    trashedTo = path.join(trashRoot, trashRunStamp(opts.now), 'hub-remove', slug);
+    try {
+      fs.mkdirSync(path.dirname(trashedTo), { recursive: true });
+      const transfer = moveEntryAcrossDevices(skillDir, trashedTo, { renameEntry: opts.renameEntry });
+      method = transfer.method;
+    } catch (error) {
+      if (fs.existsSync(hubDir)) {
+        try {
+          appendAudit(hubDir, {
+            event: 'remove',
+            slug,
+            verdict: 'failed',
+            reason: 'trash-error',
+            targets: plans.map(compact),
+            removedLinks: unlinked.length,
+            trashedTo,
+          });
+        } catch (_) { /* audit best-effort */ }
+      }
+      return {
+        ...base,
+        verdict: 'failed',
+        ok: false,
+        exitCode: 1,
+        unlinked,
+        failed: [{ dir: skillDir, note: error.message }],
+        trashedTo,
+      };
+    }
+  }
+
+  // ── 4. ledger（定向清台账；不调 syncHubState） ──────────────────────────
+  const state = readHubState(hubDir);
+  if (state.skills && state.skills[slug]) {
+    delete state.skills[slug];
+    writeHubState(hubDir, state);
+  }
+  const linkState = readLinkState(hubDir);
+  const remainingLinks = linkState.links.filter((item) => item.slug !== slug);
+  if (remainingLinks.length !== linkState.links.length) {
+    writeLinkState(hubDir, { links: remainingLinks });
+  }
+  let prunedTrash = 0;
+  try { prunedTrash = pruneTrash(trashRoot, { days: opts.trashRetentionDays }); } catch (_) { prunedTrash = 0; }
+
+  // ── 5. 汇总 + 审计 ─────────────────────────────────────────────────────
+  const verdict = hubPresent ? 'removed' : (unlinked.length > 0 || hasStateEntry ? 'cleanup-only' : 'not-found');
+  const exitCode = verdict === 'not-found' ? 4 : 0;
+  if (fs.existsSync(hubDir)) {
+    try {
+      appendAudit(hubDir, {
+        event: 'remove',
+        slug,
+        verdict,
+        targets: plans.map(compact),
+        removedLinks: unlinked.length,
+        kept: kept.length,
+        trashedTo,
+        method,
+      });
+    } catch (_) { /* audit best-effort */ }
+  }
+  return {
+    ...base,
+    verdict,
+    ok: exitCode === 0,
+    exitCode,
+    unlinked,
+    kept: kept.map(compact),
+    trashedTo,
+    method,
+    prunedTrash,
+  };
+}
+
 function linkStatus(hubDir) {
   const state = readLinkState(hubDir);
   return state.links.map((item) => {
@@ -1233,6 +1504,7 @@ module.exports = {
   classifyTarget,
   linkSkills,
   unlinkSkills,
+  removeSkills,
   linkStatus,
   status,
   doctor,
