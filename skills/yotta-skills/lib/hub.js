@@ -21,6 +21,20 @@ const STATE_FILE = '.yotta-hub.json';
 const LINKS_FILE = '.yotta-links.json';
 const AUDIT_FILE = '.yotta-hub-audit.jsonl';
 const SKILL_FILE = 'SKILL.md';
+const TRASH_RETENTION_DAYS = 7;
+
+/**
+ * Hub 家族范围 = 全家清单（skills.json，27）+ 特殊家族（5）。
+ * 特殊家族不进一次性安装清单；仅参与 Hub 安装 / 更新 / 收敛 / 体检，
+ * 版本跟随各自 npm latest（由安装管线在运行时解析）。
+ */
+const HUB_FAMILY_EXTRAS = [
+  { slug: 'yotta-dev-mcp', name: '元开', pkg: '@yottameta/yotta-dev-mcp', version: 'latest' },
+  { slug: 'yotta-partner', name: '元伴', pkg: '@yottameta/yotta-partner', version: 'latest' },
+  { slug: 'yotta-present', name: '元呈', pkg: '@yottameta/yotta-present', version: 'latest' },
+  { slug: 'yotta-skills', name: '元阁', pkg: '@yottameta/yotta-skills', version: 'latest' },
+  { slug: 'yotta-verify-mcp', name: '元信MCP', pkg: '@yottameta/yotta-verify-mcp', version: 'latest' },
+];
 
 const HASH_SKIP = new Set([
   '.git', 'node_modules', '__pycache__', '.pytest_cache', '.mypy_cache',
@@ -226,10 +240,141 @@ function manifestSlugs(manifest) {
   return set;
 }
 
+/** 家族 slug 集合：接受清单数组 / Set / {skills} 结构，并始终并入特殊家族 5 个。 */
+function familySlugSet(manifest) {
+  const set = new Set();
+  if (manifest instanceof Set) {
+    for (const slug of manifest) set.add(String(slug));
+  } else {
+    const list = Array.isArray(manifest) ? manifest : (manifest && manifest.skills) || [];
+    for (const item of list) {
+      if (typeof item === 'string') set.add(item);
+      else if (item && item.slug) set.add(item.slug);
+    }
+  }
+  for (const item of HUB_FAMILY_EXTRAS) set.add(item.slug);
+  return set;
+}
+
+function compareVersions(left, right) {
+  return scanLib.compareSemver(left, right);
+}
+
+function readSkillMeta(dir) {
+  try {
+    const text = fs.readFileSync(path.join(dir, SKILL_FILE), 'utf8');
+    const fm = scanLib.parseFrontmatter(text) || {};
+    return {
+      name: String(fm.name || '').trim(),
+      version: fm.version ? String(fm.version).trim() : '',
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function resolveTrashRoot(hubDir, opts) {
+  const options = opts || {};
+  const explicit = options.trashRoot || options.trashDir || process.env.YOTTA_SKILLS_TRASH;
+  if (explicit) return path.resolve(explicit);
+  return path.join(path.dirname(path.resolve(hubDir)), 'trash');
+}
+
+function trashRunStamp(now) {
+  const d = now instanceof Date ? now : new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' +
+    pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()) + '-' + process.pid;
+}
+
+function safeHostName(value) {
+  const cleaned = String(value || '')
+    .replace(/[\\/:*?"<>|\s]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return cleaned || 'host';
+}
+
+/** 清理回收站中超过保留期的条目（best-effort；返回清理数量）。 */
+function pruneTrash(trashRoot, options) {
+  const opts = options || {};
+  const days = Number(opts.days) > 0 ? Number(opts.days) : TRASH_RETENTION_DAYS;
+  const now = opts.now instanceof Date ? opts.now.getTime() : Date.now();
+  let pruned = 0;
+  let entries;
+  try {
+    entries = fs.readdirSync(trashRoot, { withFileTypes: true });
+  } catch (_) {
+    return 0;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const full = path.join(trashRoot, entry.name);
+    let stat;
+    try {
+      stat = fs.statSync(full);
+    } catch (_) {
+      continue;
+    }
+    if (now - stat.mtimeMs > days * 24 * 60 * 60 * 1000) {
+      try {
+        fs.rmSync(full, { recursive: true, force: true });
+        pruned += 1;
+      } catch (_) { /* keep for next run */ }
+    }
+  }
+  return pruned;
+}
+
+/**
+ * 列出宿主目录中某个家族技能的副本：
+ * - 精确同名（slug）的真目录 / 链接；
+ * - `slug__*` 前缀命名、frontmatter name === slug 的重命名副本。
+ */
+function listFamilyCopies(targetDir, slug) {
+  const copies = [];
+  let entries;
+  try {
+    entries = fs.readdirSync(targetDir, { withFileTypes: true });
+  } catch (_) {
+    return copies;
+  }
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const isExact = entry.name === slug;
+    const isRenamed = entry.name.startsWith(slug + '__');
+    if (!isExact && !isRenamed) continue;
+    const full = path.join(targetDir, entry.name);
+    let stat;
+    try {
+      stat = fs.lstatSync(full);
+    } catch (_) {
+      continue;
+    }
+    if (stat.isSymbolicLink()) {
+      copies.push({ name: entry.name, dir: full, kind: 'link', version: '' });
+      continue;
+    }
+    if (!stat.isDirectory()) {
+      if (isExact) copies.push({ name: entry.name, dir: full, kind: 'file', version: '' });
+      continue;
+    }
+    const meta = readSkillMeta(full);
+    if (isRenamed && (!meta || meta.name !== slug)) continue;
+    copies.push({
+      name: entry.name,
+      dir: full,
+      kind: 'directory',
+      version: meta ? (meta.version || '') : '',
+      metaName: meta ? meta.name : '',
+    });
+  }
+  return copies;
+}
+
 function syncHubState(hubDir, options) {
   const opts = options || {};
   const previous = readHubState(hubDir);
-  const family = manifestSlugs(opts.manifest);
+  const family = familySlugSet(opts.manifest);
   const scanned = scanHubSkills(hubDir);
   const upstream = skillsCliLock.readLock({ homeDir: opts.homeDir, env: opts.env });
   const now = nowIso();
@@ -340,8 +485,20 @@ function linkSkills(options) {
     ? opts.slugs
     : scanHubSkills(hubDir).map((item) => item.slug);
   const hubBySlug = new Map(scanHubSkills(hubDir).map((item) => [item.slug, item]));
+  const family = familySlugSet(opts.familySlugs || opts.manifest);
+  const familyFallback = !opts.familySlugs && !opts.manifest;
   const links = readLinkState(hubDir).links.slice();
   const results = [];
+  const trashRoot = resolveTrashRoot(hubDir, opts);
+  const makeLink = typeof opts.createLink === 'function' ? opts.createLink : createDirLink;
+  const stamp = trashRunStamp(opts.now);
+  const hostName = safeHostName(opts.label || path.basename(targetDir));
+  let prunedTrash = 0;
+  if (!dryRun) {
+    try {
+      prunedTrash = pruneTrash(trashRoot, { days: opts.trashRetentionDays });
+    } catch (_) { prunedTrash = 0; }
+  }
 
   for (const slug of slugs) {
     const skill = hubBySlug.get(slug);
@@ -351,6 +508,198 @@ function linkSkills(options) {
     }
     const target = path.join(targetDir, slug);
     const current = classifyTarget(target, hubDir);
+    const isFamily = family.has(slug) || (familyFallback && slug.startsWith('yotta-'));
+
+    // ── 家族技能：链接时唯一性收敛（产品口径） ──────────────────────────
+    if (isFamily) {
+      const copies = listFamilyCopies(targetDir, slug);
+      const exactCopy = copies.find((copy) => copy.name === slug) || null;
+      const renamedCopies = copies.filter((copy) => copy.name !== slug);
+      const exactHealthy = current.kind === 'link' && current.inHub &&
+        current.targetExists !== false && samePath(current.target, skill.dir);
+      const moves = [];
+      const skipped = [];
+      let block = null;
+
+      const evaluate = (copy, isExact) => {
+        if (!copy) return;
+        const cls = classifyTarget(copy.dir, hubDir);
+        if (cls.kind === 'link') {
+          const pointsAtHub = cls.inHub && cls.targetExists !== false && samePath(cls.target, skill.dir);
+          if (pointsAtHub && isExact) return; // 已是目标链接，保留
+          if (cls.inHub) {
+            moves.push({ name: copy.name, dir: copy.dir, version: copy.version || '' });
+            return;
+          }
+          if (isExact) {
+            block = { status: 'conflict', note: '目标已存在指向 Hub 之外的链接（默认跳过；确认后可加 --force 替换）' };
+          } else {
+            skipped.push(copy.name + '（外部链接，保留）');
+          }
+          return;
+        }
+        if (cls.kind === 'directory') {
+          const meta = readSkillMeta(copy.dir);
+          if (!meta || meta.name !== slug) {
+            if (isExact) block = { status: 'conflict', note: '目标已存在真目录（frontmatter name 与技能不符，拒绝收敛）' };
+            else skipped.push(copy.name + '（name 不符，保留）');
+            return;
+          }
+          const version = meta.version || '';
+          if (!skill.version) {
+            block = { status: 'skipped', note: 'Hub 副本版本无法解析；跳过收敛（fail-safe）' };
+            return;
+          }
+          if (!version) {
+            block = { status: 'skipped', note: copy.name + ' 版本无法解析；跳过收敛（fail-safe）' };
+            return;
+          }
+          if (compareVersions(version, skill.version) > 0) {
+            block = {
+              status: 'skipped',
+              note: copy.name + ' v' + version + ' 高于 Hub v' + skill.version + '；先运行 yotta-skills hub update 再链接',
+            };
+            return;
+          }
+          moves.push({ name: copy.name, dir: copy.dir, version });
+          return;
+        }
+        if (cls.kind === 'file') {
+          if (isExact) block = { status: 'conflict', note: '目标已存在普通文件（拒绝覆盖）' };
+        }
+      };
+      evaluate(exactCopy, true);
+      for (const copy of renamedCopies) evaluate(copy, false);
+
+      if (block) {
+        if (exactHealthy) {
+          results.push({ slug, status: 'linked', target, note: '已链接到 hub；仍有未收敛副本：' + block.note });
+        } else {
+          results.push({ slug, status: block.status, target, note: block.note });
+        }
+        continue;
+      }
+      if (moves.length === 0 && exactHealthy) {
+        results.push({
+          slug,
+          status: 'linked',
+          target,
+          note: '已链接到 hub' + (skipped.length ? '（保留：' + skipped.join('、') + '）' : ''),
+        });
+        continue;
+      }
+      if (moves.length > 0 && dryRun) {
+        results.push({
+          slug,
+          status: 'would-converge',
+          target,
+          note: '将收敛 ' + moves.length + ' 份旧副本（移入回收站，保留 ' + TRASH_RETENTION_DAYS + ' 天）后建立链接：' +
+            moves.map((item) => item.name).join('、'),
+          moves: moves.map((item) => ({ from: item.dir, name: item.name, version: item.version || null })),
+          trashDir: trashRoot,
+        });
+        continue;
+      }
+      if (moves.length === 0 && dryRun) {
+        results.push({ slug, status: 'would-link', target, note: '将建立链接' });
+        continue;
+      }
+      if (moves.length === 0) {
+        try {
+          makeLink(skill.dir, target);
+          const index = links.findIndex((item) => item.slug === slug && samePath(item.dir || '', targetDir));
+          const record = {
+            slug,
+            agent: opts.agentId || null,
+            label: opts.label || null,
+            dir: targetDir,
+            target,
+            hubDir: skill.dir,
+            linkedAt: nowIso(),
+            backup: null,
+          };
+          if (index >= 0) links[index] = record;
+          else links.push(record);
+          results.push({
+            slug,
+            status: 'linked',
+            target,
+            note: '已建立链接' + (skipped.length ? '（保留：' + skipped.join('、') + '）' : ''),
+          });
+          appendAudit(hubDir, { event: 'link', slug, target, hubDir: skill.dir, backup: null });
+        } catch (error) {
+          results.push({
+            slug,
+            status: 'error',
+            target,
+            note: error.message + '（未静默降级为复制；请检查目录权限或改用 --dir 指定可写目录）',
+          });
+        }
+        continue;
+      }
+      const moved = [];
+      try {
+        for (const item of moves) {
+          const dest = path.join(trashRoot, stamp, hostName, item.name);
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          fs.renameSync(item.dir, dest);
+          moved.push({ from: item.dir, to: dest, name: item.name, version: item.version || null });
+        }
+        if (!exactHealthy) makeLink(skill.dir, target);
+        const index = links.findIndex((item) => item.slug === slug && samePath(item.dir || '', targetDir));
+        const record = {
+          slug,
+          agent: opts.agentId || null,
+          label: opts.label || null,
+          dir: targetDir,
+          target,
+          hubDir: skill.dir,
+          linkedAt: nowIso(),
+          backup: null,
+          converged: moved.map((item) => item.to),
+        };
+        if (index >= 0) links[index] = record;
+        else links.push(record);
+        results.push({
+          slug,
+          status: 'linked',
+          target,
+          note: '已收敛 ' + moved.length + ' 份旧副本（回收站保留 ' + TRASH_RETENTION_DAYS + ' 天）并建立链接' +
+            (skipped.length ? '；保留：' + skipped.join('、') : ''),
+          moved,
+          trashDir: trashRoot,
+        });
+        appendAudit(hubDir, {
+          event: 'converge',
+          slug,
+          target,
+          hubDir: skill.dir,
+          hubVersion: skill.version,
+          moved,
+          trashDir: trashRoot,
+        });
+      } catch (error) {
+        let restored = true;
+        for (const item of moved.slice().reverse()) {
+          try {
+            fs.mkdirSync(path.dirname(item.from), { recursive: true });
+            fs.renameSync(item.to, item.from);
+          } catch (_) { restored = false; }
+        }
+        results.push({
+          slug,
+          status: 'error',
+          target,
+          restored,
+          note: '收敛失败：' + error.message +
+            (restored ? '（已恢复原目录）' : '（恢复失败，请查看回收站：' + trashRoot + '）'),
+          trashDir: trashRoot,
+        });
+      }
+      continue;
+    }
+
+    // ── 非家族技能：保持原行为（同名冲突默认跳过，不自动删） ────────────
     let backup = null;
     if (current.kind === 'link' && current.inHub && current.targetExists !== false && samePath(current.target, skill.dir)) {
       results.push({ slug, status: 'linked', target, note: '已链接到 hub' });
@@ -393,7 +742,7 @@ function linkSkills(options) {
       continue;
     }
     try {
-      createDirLink(skill.dir, target);
+      makeLink(skill.dir, target);
       const index = links.findIndex((item) => item.slug === slug && samePath(item.dir || '', targetDir));
       const record = {
         slug,
@@ -421,10 +770,10 @@ function linkSkills(options) {
   if (!dryRun) {
     writeLinkState(hubDir, { links });
     try {
-      syncHubState(hubDir, { homeDir: opts.homeDir, env: opts.env });
+      syncHubState(hubDir, { manifest: opts.manifest, homeDir: opts.homeDir, env: opts.env });
     } catch (_) { /* link state is already durable; state refresh is best-effort */ }
   }
-  return { hubDir, targetDir, dryRun, results };
+  return { hubDir, targetDir, dryRun, results, trashRoot, prunedTrash };
 }
 
 function unlinkSkills(options) {
@@ -514,6 +863,71 @@ function status(options) {
   };
 }
 
+/**
+ * doctor 只读检查：宿主目录中的家族技能副本是否唯一 / 版本是否落后。
+ * 只报告不修改；真正的收敛发生在 hub link 执行时。
+ */
+function singleSourceChecks(opts, add) {
+  const hubDir = path.resolve(opts.hubDir);
+  if (!fs.existsSync(hubDir)) return;
+  const family = familySlugSet(opts.manifest);
+  let discovery = opts.discovery;
+  if (!discovery) {
+    try {
+      discovery = require('./agent-discovery').discoverHosts({ homeDir: opts.homeDir, env: opts.env });
+    } catch (_) {
+      return;
+    }
+  }
+  const hubSkills = new Map(scanHubSkills(hubDir).map((item) => [item.slug, item]));
+  for (const host of discovery.hosts || []) {
+    if (!host || !host.exists) continue;
+    const groups = new Map();
+    let entries;
+    try {
+      entries = fs.readdirSync(host.dir, { withFileTypes: true });
+    } catch (_) {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      if (!entry.name.startsWith('yotta-')) continue; // 家族 slug 统一前缀，避免读外部技能
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      const dir = path.join(host.dir, entry.name);
+      const meta = readSkillMeta(dir);
+      if (!meta || !meta.name || !family.has(meta.name)) continue;
+      if (!groups.has(meta.name)) groups.set(meta.name, []);
+      groups.get(meta.name).push({
+        name: entry.name,
+        dir,
+        version: meta.version || '',
+        kind: entry.isSymbolicLink() ? 'link' : 'directory',
+      });
+    }
+    for (const [slug, copies] of groups) {
+      if (copies.length > 1) {
+        add('single_source:' + (host.agentId || host.label) + ':' + slug, false, 'warning',
+          host.label + ' 中 ' + slug + ' 存在 ' + copies.length + ' 份副本（按 name 引用有歧义）：' +
+            copies.map((copy) => copy.name).join('、'),
+          '运行 yotta-skills hub link --agent ' + (host.agentId || '<id>') + ' 收敛（旧副本移入回收站，保留 ' + TRASH_RETENTION_DAYS + ' 天）');
+      }
+      const hubSkill = hubSkills.get(slug);
+      if (!hubSkill || !hubSkill.version) continue;
+      const single = copies.length === 1 ? copies[0] : null;
+      if (!single || single.kind !== 'directory' || !single.version) continue;
+      const diff = compareVersions(single.version, hubSkill.version);
+      if (diff > 0) {
+        add('single_source_version:' + (host.agentId || host.label) + ':' + slug, false, 'warning',
+          host.label + ' 的 ' + slug + ' v' + single.version + ' 高于 Hub v' + hubSkill.version,
+          '先运行 yotta-skills hub update（或该技能自身更新）再链接');
+      } else if (diff < 0) {
+        add('single_source_version:' + (host.agentId || host.label) + ':' + slug, true, 'info',
+          host.label + ' 的 ' + slug + ' v' + single.version + ' 低于 Hub v' + hubSkill.version + '（链接时自动收敛）');
+      }
+    }
+  }
+}
+
 function doctor(options) {
   const opts = options || {};
   const hubDir = path.resolve(opts.hubDir);
@@ -562,6 +976,10 @@ function doctor(options) {
       link.status === 'ok' ? null : '运行 hub link --all 重建，或 hub unlink 清理断链');
   }
 
+  try {
+    singleSourceChecks(opts, add);
+  } catch (_) { /* 只读检查失败不影响 doctor 主流程 */ }
+
   const errors = checks.filter((check) => !check.ok && check.severity === 'error');
   const warnings = checks.filter((check) => !check.ok && check.severity === 'warning');
   return {
@@ -581,6 +999,8 @@ module.exports = {
   STATE_FILE,
   LINKS_FILE,
   AUDIT_FILE,
+  TRASH_RETENTION_DAYS,
+  HUB_FAMILY_EXTRAS,
   resolveHubDir,
   hubPaths,
   readHubState,
@@ -591,6 +1011,12 @@ module.exports = {
   hashTree,
   scanHubSkills,
   syncHubState,
+  familySlugSet,
+  compareVersions,
+  readSkillMeta,
+  resolveTrashRoot,
+  pruneTrash,
+  listFamilyCopies,
   createDirLink,
   removeDirLink,
   classifyTarget,

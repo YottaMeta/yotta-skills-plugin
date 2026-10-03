@@ -277,6 +277,13 @@ async function fetchPackument(pkg, opts) {
 /** pin=true 取精确版本；pin=false 过滤同 major 取最高正式版本。 */
 function resolveVersion(packument, skill, pin) {
   const versions = (packument && packument.versions) || {};
+  if (pin && String(skill.version) === 'latest') {
+    const latest = (packument && packument['dist-tags'] && packument['dist-tags'].latest) || null;
+    if (!latest || !versions[latest]) {
+      return { error: 'registry 无 dist-tags.latest（' + skill.pkg + '）' };
+    }
+    return { version: String(latest), dist: versions[latest].dist || {} };
+  }
   if (pin) {
     const exact = versions[String(skill.version)];
     if (!exact) {

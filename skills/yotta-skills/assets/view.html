@@ -235,7 +235,7 @@
       <div id="linkDoctor"></div>
       <div class="section panel">
         <h3>分发目标</h3>
-        <div class="faint">把 Hub 技能链接到宿主目录（Windows junction / POSIX symlink）；同名真目录默认跳过，不做静默覆盖。</div>
+        <div class="faint">把 Hub 技能链接到宿主目录（Windows junction / POSIX symlink）；元技能链接时收敛旧副本（移入回收站，保留 7 天可恢复）；外部技能同名目录默认跳过。</div>
         <div class="list" id="linkTargets"></div>
       </div>
       <div class="section panel">
@@ -569,19 +569,26 @@
     var plan = await api('/api/links/plan?dir=' + encodeURIComponent(dir));
     if (plan.error) { toast(plan.error); return; }
     var would = plan.results.filter(function (r) { return r.status === 'would-link'; });
+    var converge = plan.results.filter(function (r) { return r.status === 'would-converge'; });
+    var skipped = plan.results.filter(function (r) { return r.status === 'skipped'; });
     var conflicts = plan.results.filter(function (r) { return r.status === 'conflict'; });
+    var convergeMoves = converge.reduce(function (n, r) { return n + ((r.moves && r.moves.length) || 0); }, 0);
+    var linkable = would.length + converge.length;
     var body = '<p class="label">目标：' + esc(plan.label || '') + ' · <span class="mono">' + esc(dir) + '</span></p>' +
-      '<div class="result"><span class="badge ok">将建立</span><b>' + would.length + '</b><span>个链接</span></div>' +
+      '<div class="result"><span class="badge ok">将建立</span><b>' + linkable + '</b><span>个链接</span></div>' +
+      (converge.length ? '<div class="result"><span class="badge warn">将收敛</span><b>' + convergeMoves + '</b><span>份旧副本 → 回收站（保留 7 天，可恢复）：' + esc(converge.map(function (r) { return r.slug; }).join('、')) + '</span></div>' : '') +
+      (skipped.length ? '<div class="result"><span class="badge warn">跳过</span><b>' + skipped.length + '</b><span>项（Hub 版本旧于宿主 / 版本无法解析）：' + esc(skipped.map(function (r) { return r.slug; }).join('、')) + '</span></div>' : '') +
       (conflicts.length ? '<div class="result"><span class="badge warn">跳过冲突</span><b>' + conflicts.length + '</b><span>个同名目录 / 链接（默认不覆盖）</span></div>' : '') +
-      (would.length ? '<details><summary>查看明细</summary><div class="variants">' + would.map(function (r) { return '<div class="variant"><span class="mono">' + esc(r.slug) + '</span></div>'; }).join('') + '</div></details>' : '<p class="faint">没有可建立的链接。</p>');
+      (linkable ? '<details><summary>查看明细</summary><div class="variants">' + would.concat(converge).map(function (r) { return '<div class="variant"><span class="mono">' + esc(r.slug) + '</span></div>'; }).join('') + '</div></details>' : '<p class="faint">没有可建立的链接。</p>');
     openModal('链接预览', body, {
-      okText: would.length ? '执行链接' : null,
+      okText: linkable ? '执行链接' : null,
       onOk: async function () {
         var r = await api('/api/links/apply', { body: { targetDir: dir } });
         if (r.error) { toast(r.error); return; }
         closeModal();
         var done = (r.results || []).filter(function (x) { return x.status === 'linked'; }).length;
-        toast('已建立 ' + done + ' 个链接');
+        var moved = (r.results || []).reduce(function (n, x) { return n + ((x.moved && x.moved.length) || 0); }, 0);
+        toast('已建立 ' + done + ' 个链接' + (moved ? '；收敛 ' + moved + ' 份旧副本（回收站 7 天）' : ''));
         loadLinks();
       },
     });

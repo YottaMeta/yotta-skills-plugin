@@ -125,6 +125,44 @@ function selectRepresentativeVariant(variants) {
   return selected || variants.find((variant) => variant.version) || variants[0] || null;
 }
 
+/**
+ * 严格 YAML frontmatter 只读启发式告警（不解析、不修改源文件）。
+ *
+ * 命中常见「宽松解析可用、严格解析器拒绝」的写法：
+ * - 未加引号的单行值以逗号开头（如 `tags: ,development`）→ Plain value cannot start with flow indicator；
+ * - 未加引号的单行值包含 `: `（如折叠后的 description）→ mapping values are not allowed here。
+ * 仅供展示与记录；不影响使用则不处理（非元技能规则）。
+ */
+function strictFrontmatterWarnings(text) {
+  const m = String(text || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return [];
+  const warnings = [];
+  let blockKey = null;
+  for (const raw of m[1].split(/\r?\n/)) {
+    if (blockKey) {
+      if (!raw.trim() || /^\s/.test(raw)) continue;
+      blockKey = null;
+    }
+    const t = raw.trim();
+    if (!t || t.startsWith('#') || t.startsWith('-')) continue;
+    const idx = t.indexOf(':');
+    if (idx <= 0) continue;
+    const key = t.slice(0, idx).trim();
+    const val = t.slice(idx + 1).trim();
+    if (!val) continue;
+    if (/^[>|][-+]?$/.test(val)) { blockKey = key; continue; }
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) continue;
+    if (val.startsWith(',')) {
+      warnings.push(key + ' 值以逗号开头，严格 YAML 解析器会拒绝（Plain value cannot start with flow indicator character ,）');
+      continue;
+    }
+    if (!val.startsWith('{') && !val.startsWith('[') && val.includes(': ')) {
+      warnings.push(key + ' 值包含「: 」且未加引号，严格 YAML 解析器会拒绝（mapping values are not allowed here）');
+    }
+  }
+  return warnings;
+}
+
 /** 扫描单个技能目录：子目录含 SKILL.md 且 frontmatter 有 name 即视为技能。 */
 function scanSkillDir(dir) {
   const results = [];
@@ -396,6 +434,9 @@ function formatInventory(registry, filePath) {
 module.exports = {
   AGENT_DIRS,
   parseFrontmatter,
+  parseSemver,
+  compareSemver,
+  strictFrontmatterWarnings,
   scanSkillDir,
   defaultRoots,
   scanRoots,

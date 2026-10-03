@@ -34,6 +34,7 @@ function scanCandidates(options) {
   const hubDir = path.resolve(opts.hubDir);
   const discovery = opts.discovery || { hosts: [] };
   const existing = new Map(hubLib.scanHubSkills(hubDir).map((item) => [item.slug, item]));
+  const family = hubLib.familySlugSet(opts.manifest);
   const groups = new Map();
 
   for (const host of discovery.hosts) {
@@ -77,6 +78,7 @@ function scanCandidates(options) {
       variants: group.variants,
       inHub: group.inHub,
       conflict: hashes.size > 1 || versions.size > 1,
+      standardWarnings: externalStandardWarnings(group.slug, selected, family),
     });
   }
   candidates.sort((a, b) => a.slug.localeCompare(b.slug));
@@ -90,6 +92,20 @@ function scanCandidates(options) {
       alreadyInHub: candidates.filter((item) => item.inHub).length,
     },
   };
+}
+
+/**
+ * 非元技能标准合规只读告警（不影响使用则不处理、不改源文件）。
+ * 家族技能不告警（同类问题已由生成器批次修复并受门禁保护）。
+ */
+function externalStandardWarnings(slug, selected, family) {
+  if (!selected || !selected.dir || family.has(slug)) return [];
+  try {
+    const text = fs.readFileSync(path.join(selected.dir, 'SKILL.md'), 'utf8');
+    return scanLib.strictFrontmatterWarnings(text);
+  } catch (_) {
+    return [];
+  }
 }
 
 function includeMatch(slug, include) {

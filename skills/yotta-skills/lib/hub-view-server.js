@@ -153,7 +153,13 @@ function scanEngineInfo(ctx, found) {
 
 function overviewPayload(ctx) {
   const status = hubLib.status({ hubDir: ctx.hubDir, manifest: ctx.manifest, homeDir: ctx.homeDir, env: ctx.env });
-  const doctor = hubLib.doctor({ hubDir: ctx.hubDir, manifest: ctx.manifest, homeDir: ctx.homeDir, env: ctx.env });
+  const doctor = hubLib.doctor({
+    hubDir: ctx.hubDir,
+    manifest: ctx.manifest,
+    homeDir: ctx.homeDir,
+    env: ctx.env,
+    discovery: discovery(ctx),
+  });
   const audit = readJsonlTail(hubAuditPath(ctx.hubDir), 8);
   return {
     version: ctx.version,
@@ -239,7 +245,12 @@ function linkPlanPayload(ctx, targetDir) {
   if (!host) {
     return { error: '目标目录不在已发现的宿主目录中；请先在宿主矩阵中确认该目录。', code: 400 };
   }
-  const result = hubLib.linkSkills({ hubDir: ctx.hubDir, targetDir: host.dir, dryRun: true });
+  const result = hubLib.linkSkills({
+    hubDir: ctx.hubDir,
+    targetDir: host.dir,
+    dryRun: true,
+    manifest: ctx.manifest,
+  });
   return { hubDir: ctx.hubDir, label: host.label, targetDir: host.dir, results: result.results };
 }
 
@@ -412,6 +423,7 @@ function writeLink(ctx, body) {
     slugs,
     dryRun: false,
     force: false,
+    manifest: ctx.manifest,
   });
   const failed = result.results.filter((item) => item.status === 'error').length;
   return { code: failed ? 500 : 200, payload: { ...result, label: host.label, failed } };
