@@ -55,7 +55,7 @@ const { createInstaller, isSafeTarEntry } = require('../lib/install-pipeline');
 const { COPY_SKIP, copyDir } = require('../lib/copy-tree');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.28.0';
+let VERSION = '0.28.1';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 // @generated view-html:start
@@ -887,7 +887,11 @@ function ensureGate(context) {
 const installOne = createInstaller({
   runNpmPack,
   extractTarball,
-  copyDir: (src, dst) => copyDir(src, dst, COPY_SKIP, true),
+  copyDir: (src, dst, options) => {
+    const skip = new Set(COPY_SKIP);
+    for (const name of (options && options.keep) || []) skip.delete(name);
+    copyDir(src, dst, skip, true);
+  },
   readInstalledVersion,
   ensureGate,
   scanTarget,
@@ -1932,7 +1936,10 @@ function hubTargetDirs(opts, discovery) {
   };
 
   if (opts.dir) {
-    if (agentDirsLib.isBridgeOnlyDir(opts.dir, { homeDir: os.homedir(), env: process.env })) {
+    // Bridge dirs are never link targets, but `unlink --dir` stays available:
+    // it is the explicit cleanup path for historical out-of-scope links.
+    if (opts.hubAction !== 'unlink' &&
+      agentDirsLib.isBridgeOnlyDir(opts.dir, { homeDir: os.homedir(), env: process.env })) {
       die('该目录是锁 / 数据桥接目录（XDG_STATE_HOME/skills 或 XDG_DATA_HOME/skills），永不作为链接目标', 2,
         '如需链接真实宿主目录，请改用 --agent <id> 或其它 --dir 路径。');
     }

@@ -32,7 +32,7 @@ const HUB_FAMILY_EXTRAS = [
   { slug: 'yotta-dev-mcp', name: '元开', pkg: '@yottameta/yotta-dev-mcp', version: 'latest' },
   { slug: 'yotta-partner', name: '元伴', pkg: '@yottameta/yotta-partner', version: 'latest' },
   { slug: 'yotta-present', name: '元呈', pkg: '@yottameta/yotta-present', version: 'latest' },
-  { slug: 'yotta-skills', name: '元阁', pkg: '@yottameta/yotta-skills', version: 'latest' },
+  { slug: 'yotta-skills', name: '元阁', pkg: '@yottameta/yotta-skills', version: 'latest', runtimePayload: ['bin'] },
   { slug: 'yotta-verify-mcp', name: '元信MCP', pkg: '@yottameta/yotta-verify-mcp', version: 'latest' },
 ];
 

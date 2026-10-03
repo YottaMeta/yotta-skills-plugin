@@ -221,14 +221,20 @@ function createInstaller(deps) {
       const stagingRoot = path.join(dest, '.yottaskills-staging');
       fs.mkdirSync(stagingRoot, { recursive: true });
       staged = fs.mkdtempSync(path.join(stagingRoot, skill.slug + '-'));
-      copyTree(extracted.pkgDir, staged, deps.copyDir);
+      // Hub installs keep declared runtime payload (e.g. yotta-skills bin):
+      // hosts linked to the Hub then inherit the runtime files (OpenCode contract).
+      const runtimePayload = (opts.hubScope && Array.isArray(resolvedSkill.runtimePayload))
+        ? resolvedSkill.runtimePayload
+        : [];
+      const copyWithRuntime = (src, dst) => deps.copyDir(src, dst, { keep: runtimePayload });
+      copyTree(extracted.pkgDir, staged, copyWithRuntime);
 
       if (fs.existsSync(target)) {
         const captured = captureSnapshot(target, {
           homeDir,
           slug: skill.slug,
           version: existingVersion || 'unknown',
-          copyDir: deps.copyDir,
+          copyDir: copyWithRuntime,
         });
         snapshot = captured.path;
         backup = path.join(dest, '.yottaskills-backup-' + skill.slug + '-' + process.pid);

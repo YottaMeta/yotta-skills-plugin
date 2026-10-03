@@ -33,6 +33,9 @@ symlink），升级只改真源，已链接宿主即时生效。
 
 落地后跑一次 `hub link --all` 即可完成现存收敛。`hub doctor` 的
 `single_source:*` 检查只读报告宿主中的多份副本与版本参差，不自动修改。
+Hub 真源对清单声明了 `runtimePayload` 的技能（元忆 / 元阁：`bin`）保留运行时
+载荷：链接分发后 OpenCode 等宿主直接获得 `bin/`，无需再单独补投影；普通宿主
+安装仍为薄片（顶层 `bin` 默认跳过）。
 
 ## 链接范围（0.28.0 起）
 
@@ -44,8 +47,9 @@ symlink），升级只改真源，已链接宿主即时生效。
 - **自动发现（discovered）**：文件系统启发式扫到的目录 —— 默认不链，
   `--include-discovered` 显式纳入；
 - **桥接（bridge）**：`XDG_STATE_HOME/skills`（官方 skills CLI 锁目录）与
-  `XDG_DATA_HOME/skills`（数据桥接）—— 永不作为链接目标，`--dir` 指向时
-  也会被拒绝（fail-closed）。
+  `XDG_DATA_HOME/skills`（数据桥接）—— 永不作为链接目标（`hub link --dir`
+  指向时会被拒绝）；历史误链用 `hub unlink --dir <目录>` 显式清理（fail-closed，
+  仍只删指向 Hub 的链接）。
 
 未核实映射（如无文档 / 无自证的宿主）默认不链，可用 `--dir <目录>` 显式指定。
 `hub doctor` 的 `link_scope:*` 检查只读报告「位于默认范围之外」的已建链接，
