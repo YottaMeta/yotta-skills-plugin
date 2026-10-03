@@ -43,6 +43,9 @@
 
   .main{min-width:0;padding:24px 28px 70px}
   .topbar{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+  .loadbar{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:13px;padding:10px 13px;border:1px dashed var(--line2);border-radius:8px;margin:0 0 14px;background:var(--panel)}
+  .spinner{width:14px;height:14px;border-radius:50%;border:2px solid var(--line2);border-top-color:var(--acc);animation:spin .8s linear infinite;flex:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
   .page-title{font-size:19px;font-weight:600;margin:0}
   .page-sub{color:var(--faint);font-size:12px;margin-top:2px}
   .spacer{flex:1}
@@ -179,6 +182,7 @@
       <button class="btn" id="refreshBtn"><svg class="sv" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>刷新</button>
       <div class="chip"><span class="dot"></span>本机 · 127.0.0.1</div>
     </div>
+    <div class="loadbar" id="loadbar" hidden><span class="spinner"></span><span id="loadbarText">正在加载…</span></div>
 
     <section class="view active" id="view-overview">
       <div class="grid g4" id="ovCards"></div>
@@ -378,6 +382,26 @@
     route: { title: '路由与编排', sub: '一句话需求该用哪些技能、缺什么（只读）', load: null },
     cli: { title: '高级 CLI', sub: '低频命令速查与复制', load: null }
   };
+  var loadSeq = 0;
+  function showLoad(text) {
+    loadSeq += 1;
+    $('#loadbarText').textContent = text;
+    $('#loadbar').hidden = false;
+    $('#refreshBtn').disabled = true;
+    return loadSeq;
+  }
+  function hideLoad(seq) {
+    if (seq !== undefined && seq !== loadSeq) return;
+    $('#loadbar').hidden = true;
+    $('#refreshBtn').disabled = false;
+  }
+  async function runLoad(name) {
+    var v = VIEWS[name];
+    if (!v) return;
+    if (!v.load) { loadSeq += 1; hideLoad(); return; }
+    var seq = showLoad('正在加载' + v.title + '…');
+    try { await v.load(); } finally { hideLoad(seq); }
+  }
   function switchView(name) {
     if (!VIEWS[name]) return;
     state.view = name;
@@ -385,7 +409,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('.view'), function (v) { v.classList.toggle('active', v.id === 'view-' + name); });
     $('#pageTitle').textContent = VIEWS[name].title;
     $('#pageSub').textContent = VIEWS[name].sub;
-    if (VIEWS[name].load) VIEWS[name].load();
+    runLoad(name);
   }
   $('#nav').addEventListener('click', function (e) {
     var b = e.target.closest('button[data-view]');
@@ -395,7 +419,7 @@
     var g = e.target.closest('[data-goto]');
     if (g) switchView(g.dataset.goto);
   });
-  $('#refreshBtn').onclick = function () { var v = VIEWS[state.view]; if (v && v.load) v.load(); else toast('已刷新'); };
+  $('#refreshBtn').onclick = function () { var v = VIEWS[state.view]; if (v && v.load) runLoad(state.view); else toast('已刷新'); };
   $('#themeBtn').onclick = function () {
     document.body.classList.toggle('light');
     try { localStorage.setItem('yotta-hub-theme', document.body.classList.contains('light') ? 'light' : 'dark'); } catch (e) {}
@@ -672,7 +696,11 @@
   async function runRoute() {
     var request = $('#routeInput').value.trim();
     if (!request) { toast('先输入一句需求'); return; }
+    var seq = showLoad('正在生成路由与编排…');
+    $('#routeBtn').disabled = true;
     var d = await api('/api/route?request=' + encodeURIComponent(request));
+    hideLoad(seq);
+    $('#routeBtn').disabled = false;
     if (d.error) { toast(d.error); return; }
     var skills = (d.skills || []).map(function (s) {
       return '<div class="row"><div class="row-main"><div class="row-title">' + s.order + '. ' + esc(s.slug) + ' <span class="badge ' + (s.installed ? 'ok' : 'warn') + '">' + esc(s.installed ? '已装' + (s.version ? ' v' + s.version : '') : '缺失') + '</span></div><div class="row-meta">' + esc(s.role || '') + '</div></div></div>';
@@ -735,7 +763,7 @@
     var s = await api('/api/status');
     if (s && !s.error) $('#verLine').textContent = 'v' + s.version + ' · ' + (s.standard || '');
     else $('#verLine').textContent = '未连接本地服务';
-    loadOverview();
+    runLoad('overview');
   })();
 })();
 </script>
