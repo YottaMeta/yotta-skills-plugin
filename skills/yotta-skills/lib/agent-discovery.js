@@ -101,6 +101,8 @@ function addRoot(list, seen, dir, meta) {
     if (meta && meta.known && existing) existing.known = true;
     if (meta && meta.agentId && !existing.agentId) existing.agentId = meta.agentId;
     if (meta && meta.label && existing.label === '自动发现目录') existing.label = meta.label;
+    if (meta && meta.verified) existing.verified = true;
+    if (meta && meta.bridgeOnly) existing.bridgeOnly = true;
     return;
   }
   const record = {
@@ -109,6 +111,8 @@ function addRoot(list, seen, dir, meta) {
     label: (meta && meta.label) || '自动发现目录',
     known: Boolean(meta && meta.known),
     env: Boolean(meta && meta.env),
+    verified: Boolean(meta && meta.verified),
+    bridgeOnly: Boolean(meta && meta.bridgeOnly),
     detection: (meta && meta.detection) || 'mapping',
     exists: isDirectory(resolved),
   };
@@ -169,8 +173,8 @@ function commonRoots(options) {
   add(env.ProgramFiles, 2);
   add(env['ProgramFiles(x86)'], 2);
   add(env.XDG_CONFIG_HOME, 3);
-  add(env.XDG_STATE_HOME, 3);
-  add(env.XDG_DATA_HOME, 3);
+  // XDG_STATE_HOME / XDG_DATA_HOME are lock / data bridges, not skill roots:
+  // never scan them for link targets (see agent-dirs envRoots bridgeOnly).
   add(env.DSH_HOME, 3);
   add(env.DSH_AGENTS_HOME, 3);
   add(env.OPENCLAW_STATE_DIR, 2);

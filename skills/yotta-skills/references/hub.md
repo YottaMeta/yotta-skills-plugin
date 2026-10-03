@@ -34,6 +34,23 @@ symlink），升级只改真源，已链接宿主即时生效。
 落地后跑一次 `hub link --all` 即可完成现存收敛。`hub doctor` 的
 `single_source:*` 检查只读报告宿主中的多份副本与版本参差，不自动修改。
 
+## 链接范围（0.28.0 起）
+
+`hub hosts` 把发现的目录分为三类，`hub link --all` / `hub unlink --all` 的
+**默认范围只含已核实宿主**：
+
+- **已核实（verified）**：映射经公开宿主表（Vercel Labs `skills@1.7.0`）、官方
+  文档或本机自证（应用数据 / 配置 / 管理痕迹）核实 —— 默认链接；
+- **自动发现（discovered）**：文件系统启发式扫到的目录 —— 默认不链，
+  `--include-discovered` 显式纳入；
+- **桥接（bridge）**：`XDG_STATE_HOME/skills`（官方 skills CLI 锁目录）与
+  `XDG_DATA_HOME/skills`（数据桥接）—— 永不作为链接目标，`--dir` 指向时
+  也会被拒绝（fail-closed）。
+
+未核实映射（如无文档 / 无自证的宿主）默认不链，可用 `--dir <目录>` 显式指定。
+`hub doctor` 的 `link_scope:*` 检查只读报告「位于默认范围之外」的已建链接，
+并给出 `hub unlink --dir <目录>` 的清理提示；`hub hosts` 输出三类的本机计数。
+
 ## 命令
 
 ```bash
@@ -55,11 +72,14 @@ npx -y @yottameta/yotta-skills hub adopt --apply
 # 非元阁来源技能没有统一更新源：手动从指定目录刷新
 npx -y @yottameta/yotta-skills hub refresh my-skill --from <技能目录>
 
-# 分发到全部已发现宿主：元技能链接时收敛旧副本（回收站 7 天）；
+# 分发到全部已核实宿主（默认范围）：元技能链接时收敛旧副本（回收站 7 天）；
 # 外部技能同名真目录默认跳过（--force 才备份并替换）
 npx -y @yottameta/yotta-skills hub link --all
 
-# 只删除链接，不动 Hub 真源
+# 显式把自动发现目录一并纳入（桥接目录永不链接）
+npx -y @yottameta/yotta-skills hub link --all --include-discovered
+
+# 只删除链接，不动 Hub 真源；清理范围外链接用 --dir <目录> 精确指定
 npx -y @yottameta/yotta-skills hub unlink --all
 
 # 查看来源、版本、链接宿主与异常
@@ -69,11 +89,14 @@ npx -y @yottameta/yotta-skills hub doctor
 
 ## 宿主发现口径
 
-1. 已收录宿主映射（兼容 Vercel Labs `skills` CLI / SkillCat 的公开宿主表）；
+1. 已收录宿主映射（81 条；兼容 Vercel Labs `skills` CLI / SkillCat 的公开宿主表，
+   经 0.28.0 逐智能体核实：XDG 解析只覆盖 skills CLI 表确认的 `.config/agents`、
+   `.config/devin`、`.config/opencode` 三类 rel，其余 `.config/...` 按字面
+   `~/.config` 解析）；
 2. 环境变量覆盖（`CODEX_HOME`、`XDG_CONFIG_HOME`、`DSH_HOME`、
    `OPENCLAW_STATE_DIR`、`CLAUDE_CONFIG_DIR` 等）；
 3. 常见配置根启发式扫描；
-4. `YOTTA_SKILLS_DISCOVERY_ROOTS` 显式补充；
+4. `YOTTA_SKILLS_DISCOVERY_ROOTS` 显式补充（自动发现类，需 `--include-discovered`）；
 5. `--dir <path>` 精确指定非标准宿主。
 
 自动发现默认排除临时目录、`.bak`、candidate / staging、插件构建目录等噪声。

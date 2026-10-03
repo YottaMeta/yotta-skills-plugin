@@ -40,7 +40,7 @@ const AGENT_DIRS = {
   fx:                { label: 'fx',                    dirs: ['.fx/skills'] },
   gemini:            { label: 'Gemini CLI',            dirs: ['.gemini/skills', '.agents/skills'] },
   copilot:           { label: 'GitHub Copilot',        dirs: ['.copilot/skills', '.agents/skills'] },
-  goose:             { label: 'Goose',                 dirs: ['.config/goose/skills', '.goose/skills'] },
+  goose:             { label: 'Goose',                 dirs: ['.config/goose/skills', '.agents/skills'] },
   grok:              { label: 'Grok Build',            dirs: ['.grok/skills'] },
   hermes:            { label: 'Hermes Agent',          dirs: ['.hermes/skills'] },
   'inference-sh':    { label: 'inference.sh',          dirs: ['.inferencesh/skills'] },
@@ -54,6 +54,7 @@ const AGENT_DIRS = {
   kode:              { label: 'Kode',                  dirs: ['.kode/skills'] },
   lingma:            { label: 'Lingma',                dirs: ['.lingma/skills'] },
   mcpjam:            { label: 'MCPJam',                dirs: ['.mcpjam/skills'] },
+  mimocode:          { label: 'MiMo Code',             dirs: ['.config/mimocode/skills'] },
   minimax:           { label: 'MiniMax Code',          dirs: ['.minimax/skills'] },
   'mistral-vibe':    { label: 'Mistral Vibe',          dirs: ['.vibe/skills'] },
   moxby:             { label: 'Moxby',                 dirs: ['.moxby/skills'] },
@@ -68,6 +69,7 @@ const AGENT_DIRS = {
   'qoder-cn':        { label: 'Qoder CN',              dirs: ['.qoder-cn/skills'] },
   qwen:              { label: 'Qwen Code',             dirs: ['.qwen/skills'] },
   reasonix:          { label: 'Reasonix',              dirs: ['.reasonix/skills'] },
+  replit:            { label: 'Replit',                dirs: ['.config/agents/skills'] },
   rovodev:           { label: 'Rovo Dev',              dirs: ['.rovodev/skills'] },
   roo:               { label: 'Roo Code',              dirs: ['.roo/skills'] },
   'sarvam-code':     { label: 'Sarvam Code',           dirs: ['.sarvam/skills', '.agents/skills'] },
@@ -85,13 +87,29 @@ const AGENT_DIRS = {
   pochi:             { label: 'Pochi',                 dirs: ['.pochi/skills'] },
   adal:              { label: 'AdaL',                  dirs: ['.adal/skills'] },
   dsh:               { label: 'DSH / DeepSeek Harness', dirs: ['.dsh/skills'] },
-  yottacode:         { label: 'YottaCode',             dirs: ['.yottacode/skills'] },
-  box:               { label: 'Box Agent',             dirs: ['.box-agent/skills'] },
+  yottacode:         { label: 'YottaCode',             dirs: ['.yottacode/skills'], verified: false },
+  box:               { label: 'Box Agent',             dirs: ['.box-agent/skills'], verified: false },
   lmstudio:          { label: 'LM Studio',             dirs: ['.lmstudio/skills'] },
   ccswitch:          { label: 'CC Switch',             dirs: ['.cc-switch/skills'] },
   agents:            { label: '通用 AGENTS.md',         dirs: ['.agents/skills'] },
-  universal:         { label: 'Universal .agents',      dirs: ['.agents/skills'] },
+  universal:         { label: 'Universal .agents',      dirs: ['.config/agents/skills', '.agents/skills'] },
 };
+
+/**
+ * Rel paths that follow XDG_CONFIG_HOME when it is set.
+ *
+ * Verified against the upstream Vercel Labs `skills` CLI v1.7.0 table
+ * (2026-10-03): only amp / universal / replit (`configHome/agents/skills`),
+ * devin (`configHome/devin/skills`) and opencode (`configHome/opencode/skills`)
+ * resolve through the config home. Everything else uses the literal
+ * `~/.config/...` path even when XDG_CONFIG_HOME is set (crush / kimchi per the
+ * upstream table; goose follows the machine-verified `~/.config/goose`).
+ */
+const XDG_CONFIG_RELS = new Set([
+  '.config/agents/skills',
+  '.config/devin/skills',
+  '.config/opencode/skills',
+]);
 
 function envPath(env, key) {
   const value = env && env[key];
@@ -119,8 +137,11 @@ function resolveUserDir(rel, options) {
     return path.join(envPath(env, 'CODEX_HOME') || path.join(home, '.codex'), 'skills');
   }
   if (rel.startsWith('.config/')) {
-    const base = envPath(env, 'XDG_CONFIG_HOME') || path.join(home, '.config');
-    return path.join(base, ...rel.slice('.config/'.length).split('/'));
+    const xdg = envPath(env, 'XDG_CONFIG_HOME');
+    if (xdg && XDG_CONFIG_RELS.has(rel)) {
+      return path.join(xdg, ...rel.slice('.config/'.length).split('/'));
+    }
+    return path.join(home, rel);
   }
   if (rel === '.openclaw/skills') {
     return path.join(envPath(env, 'OPENCLAW_STATE_DIR') || path.join(home, '.openclaw'), 'skills');
@@ -150,16 +171,16 @@ function resolveUserDir(rel, options) {
 function knownRoots(options) {
   const roots = [];
   const seen = new Set();
-  const add = (dir, agentId, label) => {
+  const add = (dir, agentId, label, verified) => {
     if (!dir) return;
     const resolved = path.resolve(dir);
     if (seen.has(resolved)) return;
     seen.add(resolved);
-    roots.push({ dir: resolved, agentId, label, known: true });
+    roots.push({ dir: resolved, agentId, label, known: true, verified: verified !== false });
   };
   for (const [agentId, info] of Object.entries(AGENT_DIRS)) {
     for (const rel of info.dirs) {
-      add(resolveUserDir(rel, options), agentId, info.label);
+      add(resolveUserDir(rel, options), agentId, info.label, info.verified !== false);
     }
   }
   return roots;
@@ -169,15 +190,25 @@ function knownRoots(options) {
 function envRoots(options) {
   const env = envObject(options);
   const roots = [];
-  const add = (dir, agentId, label) => {
+  const add = (dir, agentId, label, extra) => {
     if (!dir) return;
-    roots.push({ dir: path.resolve(dir), agentId: agentId || null, label: label || '环境变量指定目录', known: false, env: true });
+    roots.push({
+      dir: path.resolve(dir),
+      agentId: agentId || null,
+      label: label || '环境变量指定目录',
+      known: false,
+      env: true,
+      verified: true,
+      ...(extra || {}),
+    });
   };
 
   add(envPath(env, 'CODEX_HOME') && path.join(env.CODEX_HOME, 'skills'), 'codex', 'Codex（CODEX_HOME）');
   add(envPath(env, 'XDG_CONFIG_HOME') && path.join(env.XDG_CONFIG_HOME, 'opencode', 'skills'), 'opencode', 'OpenCode（XDG_CONFIG_HOME）');
-  add(envPath(env, 'XDG_STATE_HOME') && path.join(env.XDG_STATE_HOME, 'skills'), null, 'XDG_STATE_HOME/skills');
-  add(envPath(env, 'XDG_DATA_HOME') && path.join(env.XDG_DATA_HOME, 'skills'), null, 'XDG_DATA_HOME/skills');
+  add(envPath(env, 'XDG_STATE_HOME') && path.join(env.XDG_STATE_HOME, 'skills'), null,
+    'XDG_STATE_HOME/skills（锁桥接，不链接）', { bridgeOnly: true });
+  add(envPath(env, 'XDG_DATA_HOME') && path.join(env.XDG_DATA_HOME, 'skills'), null,
+    'XDG_DATA_HOME/skills（数据桥接，不链接）', { bridgeOnly: true });
   add(envPath(env, 'DSH_HOME') && path.join(env.DSH_HOME, 'skills'), 'dsh', 'DSH（DSH_HOME）');
   add(envPath(env, 'DSH_AGENTS_HOME') && path.join(env.DSH_AGENTS_HOME, 'skills'), 'dsh', 'DSH Agents（DSH_AGENTS_HOME）');
   add(envPath(env, 'OPENCLAW_STATE_DIR') && path.join(env.OPENCLAW_STATE_DIR, 'skills'), 'openclaw', 'OpenClaw（OPENCLAW_STATE_DIR）');
@@ -188,14 +219,40 @@ function envRoots(options) {
     .split(path.delimiter)
     .map((item) => item.trim())
     .filter(Boolean);
-  for (const dir of extra) add(dir, null, 'YOTTA_SKILLS_DISCOVERY_ROOTS');
+  for (const dir of extra) add(dir, null, 'YOTTA_SKILLS_DISCOVERY_ROOTS', { verified: false });
 
   return roots;
 }
 
+/**
+ * Lock / data bridge directories: the official `skills` CLI keeps its lock in
+ * `$XDG_STATE_HOME/skills`, and `$XDG_DATA_HOME/skills` is a data bridge.
+ * Neither is a host skill-loading directory, so both are never link targets.
+ */
+function bridgeOnlyDirs(options) {
+  const env = envObject(options);
+  const dirs = [];
+  if (envPath(env, 'XDG_STATE_HOME')) dirs.push(path.join(env.XDG_STATE_HOME, 'skills'));
+  if (envPath(env, 'XDG_DATA_HOME')) dirs.push(path.join(env.XDG_DATA_HOME, 'skills'));
+  return dirs.map((dir) => path.resolve(dir));
+}
+
+function isBridgeOnlyDir(dir, options) {
+  if (!dir) return false;
+  const target = path.resolve(dir);
+  for (const bridge of bridgeOnlyDirs(options)) {
+    const relative = path.relative(bridge, target);
+    if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) return true;
+  }
+  return false;
+}
+
 module.exports = {
   AGENT_DIRS,
+  XDG_CONFIG_RELS,
   resolveUserDir,
   knownRoots,
   envRoots,
+  bridgeOnlyDirs,
+  isBridgeOnlyDir,
 };

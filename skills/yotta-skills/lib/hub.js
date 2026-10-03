@@ -154,6 +154,11 @@ function samePath(left, right) {
   return a === b;
 }
 
+function pathKey(dir) {
+  const real = safeRealpath(dir);
+  return process.platform === 'win32' ? real.toLowerCase() : real;
+}
+
 function isInside(root, target) {
   const base = safeRealpath(root);
   const candidate = safeRealpath(target);
@@ -1162,6 +1167,23 @@ function doctor(options) {
     add('link:' + link.slug + ':' + link.dir, link.status === 'ok', link.status === 'ok' ? 'info' : 'error',
       link.status === 'ok' ? '链接正常: ' + link.slug : '链接异常（' + link.status + '）: ' + link.slug,
       link.status === 'ok' ? null : '运行 hub link --all 重建，或 hub unlink 清理断链');
+  }
+
+  const scopeDirs = Array.isArray(opts.linkScopeDirs) ? opts.linkScopeDirs : null;
+  if (scopeDirs && scopeDirs.length > 0) {
+    const scope = new Set(scopeDirs.map((dir) => pathKey(dir)));
+    const outside = new Map();
+    for (const link of links) {
+      if (!link.dir) continue;
+      if (scope.has(pathKey(link.dir))) continue;
+      if (!outside.has(link.dir)) outside.set(link.dir, []);
+      outside.get(link.dir).push(link.slug);
+    }
+    for (const [dir, slugs] of outside) {
+      add('link_scope:' + dir, false, 'warning',
+        '链接位于默认范围之外: ' + dir + '（' + slugs.length + ' 条）',
+        '默认范围 = 已核实宿主；如需保留请用 hub link --dir 或 --include-discovered 显式重建，否则用 hub unlink --dir "' + dir + '" 清理');
+    }
   }
 
   try {

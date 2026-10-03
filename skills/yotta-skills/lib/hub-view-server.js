@@ -212,6 +212,9 @@ function hostsPayload(ctx) {
     summary: {
       hosts: hosts.length,
       existing: hosts.filter((host) => host.exists).length,
+      verified: hosts.filter((host) => host.exists && host.verified && !host.bridgeOnly).length,
+      discovered: hosts.filter((host) => host.exists && !host.verified && !host.bridgeOnly).length,
+      bridge: hosts.filter((host) => host.exists && host.bridgeOnly).length,
       installedMarks: found.installed.length,
       links: links.length,
       brokenLinks: links.filter((link) => link.status !== 'ok').length,
@@ -244,6 +247,9 @@ function linkPlanPayload(ctx, targetDir) {
   const host = found.hosts.find((item) => sameDir(item.dir, targetDir));
   if (!host) {
     return { error: '目标目录不在已发现的宿主目录中；请先在宿主矩阵中确认该目录。', code: 400 };
+  }
+  if (host.bridgeOnly) {
+    return { error: '该目录是锁 / 数据桥接目录（XDG_STATE_HOME/skills 或 XDG_DATA_HOME/skills），永不作为链接目标。', code: 400 };
   }
   const result = hubLib.linkSkills({
     hubDir: ctx.hubDir,
@@ -407,6 +413,9 @@ function writeLink(ctx, body) {
   const targetDir = String(body.targetDir || '');
   const host = found.hosts.find((item) => sameDir(item.dir, targetDir));
   if (!host) return { code: 400, payload: { error: '目标目录不在已发现的宿主目录中。' } };
+  if (host.bridgeOnly) {
+    return { code: 400, payload: { error: '该目录是锁 / 数据桥接目录（XDG_STATE_HOME/skills 或 XDG_DATA_HOME/skills），永不作为链接目标。' } };
+  }
   if (body.force) {
     return {
       code: 400,

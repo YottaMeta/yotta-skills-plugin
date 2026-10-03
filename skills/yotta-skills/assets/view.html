@@ -205,7 +205,7 @@
         <span class="label" id="hostSummary"></span>
       </div>
       <div class="section panel">
-        <table><thead><tr><th>宿主</th><th>技能目录</th><th>目录技能</th><th>指向 Hub</th><th>异常</th><th>状态</th></tr></thead><tbody id="hostRows"></tbody></table>
+        <table><thead><tr><th>宿主</th><th>技能目录</th><th>范围</th><th>目录技能</th><th>指向 Hub</th><th>异常</th><th>状态</th></tr></thead><tbody id="hostRows"></tbody></table>
         <div class="empty" id="hostEmpty" hidden>没有匹配的宿主目录。</div>
       </div>
       <div class="section panel"><h3>已安装标记（无技能目录的宿主）</h3><div class="list" id="hostMarks"></div></div>
@@ -235,7 +235,7 @@
       <div id="linkDoctor"></div>
       <div class="section panel">
         <h3>分发目标</h3>
-        <div class="faint">把 Hub 技能链接到宿主目录（Windows junction / POSIX symlink）；元技能链接时收敛旧副本（移入回收站，保留 7 天可恢复）；外部技能同名目录默认跳过。</div>
+        <div class="faint">把 Hub 技能链接到宿主目录（Windows junction / POSIX symlink）；默认范围 = 已核实宿主，自动发现目录需在 CLI 用 --include-discovered 显式纳入，锁 / 数据桥接目录永不链接；元技能链接时收敛旧副本（移入回收站，保留 7 天可恢复）。</div>
         <div class="list" id="linkTargets"></div>
       </div>
       <div class="section panel">
@@ -442,7 +442,7 @@
     var d = await api('/api/hosts');
     if (d.error) { toast(d.error); return; }
     state.hosts = d;
-    $('#hostSummary').textContent = '目录 ' + d.summary.existing + ' / ' + d.summary.hosts + ' · 已装标记 ' + d.summary.installedMarks + ' · 链接 ' + d.summary.links;
+    $('#hostSummary').textContent = '目录 ' + d.summary.existing + ' / ' + d.summary.hosts + '（已核实 ' + d.summary.verified + ' · 自动发现 ' + d.summary.discovered + ' · 桥接 ' + d.summary.bridge + '）· 已装标记 ' + d.summary.installedMarks + ' · 链接 ' + d.summary.links;
     renderHosts();
     var marks = d.installed || [];
     $('#hostMarks').innerHTML = marks.length ? marks.map(function (m) {
@@ -459,8 +459,10 @@
     $('#hostEmpty').hidden = rows.length > 0;
     $('#hostRows').innerHTML = rows.map(function (h) {
       var status = !h.exists ? '<span class="badge">未创建</span>' : (h.brokenLinks ? '<span class="badge danger">有异常</span>' : '<span class="badge ok">可用</span>');
+      var scopeBadge = h.bridgeOnly ? '<span class="badge info">桥接·不链</span>' : h.verified ? '<span class="badge ok">已核实</span>' : '<span class="badge warn">自动发现</span>';
       return '<tr><td><div class="cell-main">' + esc(h.label) + '</div><div class="cell-sub">' + esc(h.agentId || (h.known ? '已知宿主' : h.detection || '自动发现')) + '</div></td>' +
         '<td><div class="mono">' + esc(h.dir) + '</div><button class="btn small" data-copy="' + esc(h.dir) + '">复制</button></td>' +
+        '<td>' + scopeBadge + '</td>' +
         '<td>' + esc(h.skillCount || 0) + '</td><td>' + esc(h.hubLinks || 0) + '</td><td>' + esc(h.brokenLinks || 0) + '</td><td>' + status + '</td></tr>';
     }).join('');
   }
@@ -550,7 +552,9 @@
     $('#linkDoctor').innerHTML = doctorBanner(doctor);
     var existing = (hosts.hosts || []).filter(function (h) { return h.exists; });
     $('#linkTargets').innerHTML = existing.length ? existing.map(function (h) {
-      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(h.label) + '</div><div class="row-meta mono">' + esc(h.dir) + '</div><div class="row-meta">目录技能 ' + esc(h.skillCount || 0) + ' · 指向 Hub ' + esc(h.hubLinks || 0) + (h.brokenLinks ? ' · 异常 ' + h.brokenLinks : '') + '</div></div><div class="row-actions"><button class="btn small" data-link-plan="' + esc(h.dir) + '" data-label="' + esc(h.label) + '">预览链接</button></div></div>';
+      var scopeBadge = h.bridgeOnly ? '<span class="badge info">桥接·不链接</span>' : h.verified ? '<span class="badge ok">已核实</span>' : '<span class="badge warn">自动发现</span>';
+      var action = h.bridgeOnly ? '' : '<button class="btn small" data-link-plan="' + esc(h.dir) + '" data-label="' + esc(h.label) + '">预览链接</button>';
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(h.label) + ' ' + scopeBadge + '</div><div class="row-meta mono">' + esc(h.dir) + '</div><div class="row-meta">目录技能 ' + esc(h.skillCount || 0) + ' · 指向 Hub ' + esc(h.hubLinks || 0) + (h.brokenLinks ? ' · 异常 ' + h.brokenLinks : '') + '</div></div><div class="row-actions">' + action + '</div></div>';
     }).join('') : '<div class="empty">尚未发现可用的宿主技能目录。</div>';
     var rows = links.links || [];
     $('#linkEmpty').hidden = rows.length > 0;
@@ -698,7 +702,8 @@
       { cmd: 'yotta-skills hub adopt --apply', why: '执行收编（默认复制保真）' },
     ] },
     { name: '链接与体检', items: [
-      { cmd: 'yotta-skills hub link --all', why: '把 Hub 技能链接到全部宿主' },
+      { cmd: 'yotta-skills hub link --all', why: '链接到已核实宿主（默认范围）' },
+      { cmd: 'yotta-skills hub link --all --include-discovered', why: '显式纳入自动发现目录' },
       { cmd: 'yotta-skills hub link --agent codex', why: '只链接到一个宿主' },
       { cmd: 'yotta-skills hub unlink --all', why: '只删链接，不动 Hub 真源' },
       { cmd: 'yotta-skills hub status', why: '查看技能 / 来源 / 链接' },
