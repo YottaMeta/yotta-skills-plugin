@@ -1461,6 +1461,22 @@ function doctor(options) {
     singleSourceChecks(opts, add);
   } catch (_) { /* 只读检查失败不影响 doctor 主流程 */ }
 
+  // F3（0.29.0）：宿主状态细分只读检查 —— 残留 / 仅标记给 info 提示，不 fail。
+  if (opts.discovery) {
+    for (const host of opts.discovery.hosts || []) {
+      if (!host || !host.dir) continue;
+      if (host.state === 'orphan') {
+        add('host_state:' + pathKey(host.dir), true, 'info',
+          '宿主目录疑似残留（实体未确认）: ' + host.label + ' — ' + host.dir,
+          '确认宿主已卸载后可清理：yotta-skills hub hosts remove "' + host.dir + '" --purge（默认预览，--yes 执行）');
+      } else if (host.state === 'marker-only') {
+        add('host_state:' + pathKey(host.dir), true, 'info',
+          '已装实体但技能目录未创建: ' + host.label,
+          '需要分发时运行 yotta-skills hub link --agent ' + (host.agentId || '<id>'));
+      }
+    }
+  }
+
   const errors = checks.filter((check) => !check.ok && check.severity === 'error');
   const warnings = checks.filter((check) => !check.ok && check.severity === 'warning');
   return {

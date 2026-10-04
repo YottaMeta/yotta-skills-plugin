@@ -55,11 +55,47 @@ Hub 真源对清单声明了 `runtimePayload` 的技能（元忆 / 元阁：`bin
 `hub doctor` 的 `link_scope:*` 检查只读报告「位于默认范围之外」的已建链接，
 并给出 `hub unlink --dir <目录>` 的清理提示；`hub hosts` 输出三类的本机计数。
 
+## 宿主状态细分与自定义注册（0.29.0 起）
+
+每条宿主目录带生命周期状态（`hub hosts` / 面板宿主矩阵）：
+
+- **可用**：目录存在 + 实体证据（应用标记 / 用户注册 / 手动标记）—— 默认链接 / 分发；
+- **残留**：目录存在 + 无实体证据（卸载残留或 CLI-only 安装）—— 默认保留使用（仍可链接），
+  可显式清理；文案统一「实体未确认」，不判定「已卸载」；
+- **未创建**：目录不存在且无实体证据 —— 安装宿主后自动出现；
+- **仅标记**：已装实体、技能目录未创建 —— `hub link --agent <id>` 会创建目录并链接。
+
+`hub doctor` 的 `host_state:*` 检查对残留 / 仅标记给 info 提示，不判 fail。
+自定义宿主目录可用 `hub hosts add` 注册进发现 / 分发 / 收编范围（只注册，
+不创建目录、不改宿主配置；移除注册绝不删目录）：
+
+```bash
+# 注册 / 查看 / 移除自定义宿主（realpath 去重；Hub / 桥接目录拒绝注册）
+npx -y @yottameta/yotta-skills hub hosts add ~/my-agent/skills --label "我的宿主"
+npx -y @yottameta/yotta-skills hub hosts list
+npx -y @yottameta/yotta-skills hub hosts remove ~/my-agent/skills
+
+# 手动标记状态（实体证据不足时）：available / orphan / ignored
+npx -y @yottameta/yotta-skills hub hosts mark ~/my-agent/skills --state orphan
+
+# 清理残留目录：默认预览；--yes 执行 —— 只删指向 Hub 的链接（含死链），
+# 非 Hub 链接 / 非技能内容随目录保留在回收站（7 天，输出恢复路径）
+npx -y @yottameta/yotta-skills hub hosts remove ~/my-agent/skills --purge
+npx -y @yottameta/yotta-skills hub hosts remove ~/my-agent/skills --purge --yes
+```
+
+注册表 = `<root>/hosts.json`（root = `YOTTA_SKILLS_HOME` 或 `~/.yottaskills`，schema v1，
+可 diff）；面板「宿主矩阵 → 添加自定义目录」等价可用，写操作需页面令牌与确认串。
+
 ## 命令
 
 ```bash
 # 发现本机已装智能体与技能目录（文件系统优先；不读元忆 / 注册表）
 npx -y @yottameta/yotta-skills hub hosts
+
+# 状态过滤 / 自定义注册 / 残留清理（详见「宿主状态细分与自定义注册」节）
+npx -y @yottameta/yotta-skills hub hosts --state orphan
+npx -y @yottameta/yotta-skills hub hosts add ~/my-agent/skills --label "我的宿主"
 
 # 安装 / 更新 Hub 真源
 # 范围 = 全家清单 27 + 特殊家族 5；特殊家族跟随各自 npm latest

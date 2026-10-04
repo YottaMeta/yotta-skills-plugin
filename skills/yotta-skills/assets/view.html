@@ -50,6 +50,9 @@
   .page-sub{color:var(--faint);font-size:12px;margin-top:2px}
   .spacer{flex:1}
   .chip{display:flex;align-items:center;gap:7px;padding:5px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:12px;white-space:nowrap}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{cursor:pointer;background:transparent}
+  .chip.active{color:var(--acc);border-color:rgba(95,191,143,.45);background:rgba(95,191,143,.10)}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--acc)}
 
   .view{display:none}.view.active{display:block}
@@ -213,10 +216,12 @@
     <section class="view" id="view-hosts">
       <div class="toolbar">
         <label class="search"><svg class="sv" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="hostSearch" placeholder="过滤宿主 / 目录"></label>
-        <span class="label" id="hostSummary"></span>
+        <div class="chips" id="hostStateChips"></div>
+        <button class="btn small" id="hostAddBtn">添加自定义目录</button>
       </div>
       <div class="section panel">
-        <table><thead><tr><th>宿主</th><th>技能目录</th><th>范围</th><th>目录技能</th><th>指向 Hub</th><th>异常</th><th>状态</th></tr></thead><tbody id="hostRows"></tbody></table>
+        <div class="faint" id="hostSummary"></div>
+        <table><thead><tr><th>宿主</th><th>技能目录</th><th>范围</th><th>目录技能</th><th>指向 Hub</th><th>异常</th><th>状态</th><th></th></tr></thead><tbody id="hostRows"></tbody></table>
         <div class="empty" id="hostEmpty" hidden>没有匹配的宿主目录。</div>
       </div>
       <div class="section panel"><h3>已安装标记（无技能目录的宿主）</h3><div class="list" id="hostMarks"></div></div>
@@ -315,7 +320,7 @@
 <script>
 (function () {
   var TOKEN = (document.querySelector('meta[name="yotta-view-token"]') || {}).content || '';
-  var state = { view: 'overview', overview: null, hosts: null, adopt: null, selected: {}, records: null, tab: 'snapshots', hostFilter: '', adoptFilter: '', ovSkillFilter: '' };
+  var state = { view: 'overview', overview: null, hosts: null, adopt: null, selected: {}, records: null, tab: 'snapshots', hostFilter: '', hostStateFilter: '', adoptFilter: '', ovSkillFilter: '' };
 
   function $(sel) { return document.querySelector(sel); }
   function esc(value) {
@@ -526,34 +531,115 @@
     var d = await api('/api/hosts');
     if (d.error) { toast(d.error); return; }
     state.hosts = d;
-    $('#hostSummary').textContent = '目录 ' + d.summary.existing + ' / ' + d.summary.hosts + '（已核实 ' + d.summary.verified + ' · 自动发现 ' + d.summary.discovered + ' · 桥接 ' + d.summary.bridge + '）· 已装标记 ' + d.summary.installedMarks + ' · 链接 ' + d.summary.links;
+    var s = d.summary.states || {};
+    $('#hostSummary').textContent = '可用 ' + (s.available || 0) + ' · 残留 ' + (s.orphan || 0) + ' · 未创建 ' + (s.missing || 0) + ' · 仅标记 ' + (s.markerOnly || 0) + (s.ignored ? ' · 已忽略 ' + s.ignored : '') + ' · 链接 ' + d.summary.links + '（异常 ' + d.summary.brokenLinks + '）';
+    renderHostStateChips();
     renderHosts();
     var marks = d.installed || [];
     $('#hostMarks').innerHTML = marks.length ? marks.map(function (m) {
       return '<div class="row"><div class="row-main"><div class="row-title">' + esc(m.label) + '</div><div class="row-meta">' + esc(m.source || '') + (m.hasSkillsDir ? ' · 技能目录：' + esc(m.skillDir || '') : ' · 未发现技能目录') + '</div></div><span class="badge ' + (m.hasSkillsDir ? 'ok' : 'info') + '">' + esc(m.hasSkillsDir ? '可链接' : '仅标记') + '</span></div>';
     }).join('') : '<div class="empty">没有检测到额外宿主标记。</div>';
   }
+  function renderHostStateChips() {
+    var d = state.hosts; if (!d) return;
+    var s = d.summary.states || {};
+    var chips = [
+      ['', '全部'],
+      ['available', '可用 ' + (s.available || 0)],
+      ['orphan', '残留 ' + (s.orphan || 0)],
+      ['missing', '未创建 ' + (s.missing || 0)],
+      ['marker-only', '仅标记 ' + (s.markerOnly || 0)],
+    ];
+    $('#hostStateChips').innerHTML = chips.map(function (c) {
+      return '<button class="chip' + (state.hostStateFilter === c[0] ? ' active' : '') + '" data-host-state="' + esc(c[0]) + '">' + esc(c[1]) + '</button>';
+    }).join('');
+  }
+  function hostStateBadge(h) {
+    if (h.bridgeOnly) return '<span class="badge info">桥接</span>';
+    var map = { available: ['ok', '可用'], orphan: ['warn', '残留'], missing: ['', '未创建'], 'marker-only': ['info', '仅标记'], ignored: ['', '已忽略'] };
+    var item = map[h.state] || ['', h.state || '未知'];
+    return '<span class="badge ' + item[0] + '">' + esc(item[1]) + (h.stateSource === 'manual' ? '·手动' : '') + '</span>' + (h.brokenLinks ? ' <span class="badge danger">异常</span>' : '');
+  }
   function renderHosts() {
     var d = state.hosts; if (!d) return;
     var q = state.hostFilter.toLowerCase();
+    var sf = state.hostStateFilter;
     var rows = (d.hosts || []).filter(function (h) {
+      if (sf && h.state !== sf) return false;
       if (!q) return true;
       return String(h.label || '').toLowerCase().includes(q) || String(h.dir || '').toLowerCase().includes(q);
     });
     $('#hostEmpty').hidden = rows.length > 0;
     $('#hostRows').innerHTML = rows.map(function (h) {
-      var status = !h.exists ? '<span class="badge">未创建</span>' : (h.brokenLinks ? '<span class="badge danger">有异常</span>' : '<span class="badge ok">可用</span>');
-      var scopeBadge = h.bridgeOnly ? '<span class="badge info">桥接·不链</span>' : h.verified ? '<span class="badge ok">已核实</span>' : '<span class="badge warn">自动发现</span>';
+      var scopeBadge = h.bridgeOnly ? '<span class="badge info">桥接·不链</span>' : (h.detection === 'user-registry' ? '<span class="badge info">用户注册</span>' : h.verified ? '<span class="badge ok">已核实</span>' : '<span class="badge warn">自动发现</span>');
+      var action = '';
+      if (h.exists && h.state === 'orphan' && !h.bridgeOnly) action += '<button class="btn small danger" data-host-purge="' + esc(h.dir) + '">清理</button> ';
+      if (h.detection === 'user-registry') action += '<button class="btn small" data-host-unregister="' + esc(h.dir) + '">移除注册</button>';
       return '<tr><td><div class="cell-main">' + esc(h.label) + '</div><div class="cell-sub">' + esc(h.agentId || (h.known ? '已知宿主' : h.detection || '自动发现')) + '</div></td>' +
         '<td><div class="mono">' + esc(h.dir) + '</div><button class="btn small" data-copy="' + esc(h.dir) + '">复制</button></td>' +
         '<td>' + scopeBadge + '</td>' +
-        '<td>' + esc(h.skillCount || 0) + '</td><td>' + esc(h.hubLinks || 0) + '</td><td>' + esc(h.brokenLinks || 0) + '</td><td>' + status + '</td></tr>';
+        '<td>' + esc(h.skillCount || 0) + '</td><td>' + esc(h.hubLinks || 0) + '</td><td>' + esc(h.brokenLinks || 0) + '</td><td>' + hostStateBadge(h) + '</td><td>' + action + '</td></tr>';
     }).join('');
   }
   $('#hostSearch').addEventListener('input', function (e) { state.hostFilter = e.target.value; renderHosts(); });
-  $('#hostRows').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-copy]');
-    if (b) copyText(b.dataset.copy);
+  $('#hostStateChips').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-host-state]');
+    if (!b) return;
+    state.hostStateFilter = b.dataset.hostState;
+    renderHostStateChips();
+    renderHosts();
+  });
+  $('#hostAddBtn').addEventListener('click', function () {
+    var body = '<p class="label">注册自定义宿主目录：纳入发现 / 分发 / 收编。不创建目录、不改宿主配置。</p>' +
+      '<div class="section"><label class="label">目录（必须已存在）</label><input id="hostAddDir" placeholder="例如 D:\\my-agent\\skills"></div>' +
+      '<div class="section"><label class="label">名称（可选，默认目录名）</label><input id="hostAddLabel" placeholder="我的宿主"></div>';
+    openModal('添加自定义目录', body, {
+      okText: '注册',
+      onOk: async function () {
+        var dir = ($('#hostAddDir') && $('#hostAddDir').value || '').trim();
+        var label = ($('#hostAddLabel') && $('#hostAddLabel').value || '').trim();
+        if (!dir) { toast('请填写目录'); return; }
+        var r = await api('/api/hosts/add', { body: { dir: dir, label: label } });
+        if (r.error) { toast(r.error); return; }
+        closeModal();
+        toast('已注册：' + ((r.entry && r.entry.label) || dir));
+        loadHosts();
+      },
+    });
+  });
+  async function openHostPurgeModal(dir) {
+    var plan = await api('/api/hosts/purge-plan?dir=' + encodeURIComponent(dir));
+    if (plan.error) { toast(plan.error); return; }
+    var body = '<p class="label">只删除指向 Hub 的链接（含死链）；非 Hub 链接 / 非技能内容随目录保留在回收站（7 天可恢复）。</p>' +
+      '<div class="result"><span class="badge warn">将解除链接</span><b>' + esc(plan.unlinkCount) + '</b><span>条（保留 ' + esc(plan.keptLinks) + ' 非 Hub 链接 / ' + esc(plan.keptEntries) + ' 非链接内容）</span></div>' +
+      '<div class="mono">' + esc(dir) + '</div>' +
+      '<div class="section"><label class="label">输入 purge 确认执行：</label><input id="hostPurgeConfirm" placeholder="purge"></div>';
+    confirmModal('清理残留目录？', body, '清理（移入回收站）', true, async function () {
+      var typed = ($('#hostPurgeConfirm') && $('#hostPurgeConfirm').value || '').trim();
+      if (typed !== 'purge') { toast('确认串不匹配（输入 purge）'); return; }
+      var r = await api('/api/hosts/purge', { body: { dir: dir, confirm: 'purge' } });
+      if (r.error) { toast(r.error); return; }
+      closeModal();
+      toast('已清理：解除 ' + r.unlinkCount + ' 条链接；回收站保留 7 天');
+      loadHosts();
+    });
+  }
+  $('#hostRows').addEventListener('click', async function (e) {
+    var copyBtn = e.target.closest('[data-copy]');
+    if (copyBtn) { copyText(copyBtn.dataset.copy); return; }
+    var purgeBtn = e.target.closest('[data-host-purge]');
+    if (purgeBtn) { openHostPurgeModal(purgeBtn.dataset.hostPurge); return; }
+    var unregBtn = e.target.closest('[data-host-unregister]');
+    if (unregBtn) {
+      var dir = unregBtn.dataset.hostUnregister;
+      confirmModal('移除注册？', '<p class="label">只移除自定义宿主注册，不删除目录、不改宿主配置。</p><div class="mono">' + esc(dir) + '</div>', '移除注册', false, async function () {
+        var r = await api('/api/hosts/remove', { body: { dir: dir } });
+        if (r.error) { toast(r.error); return; }
+        closeModal();
+        toast('已移除注册（目录保留）');
+        loadHosts();
+      });
+    }
   });
 
   async function loadAdopt() {
@@ -800,7 +886,9 @@
   function renderCliHelp(d) {
     if (!d || d.error) { $('#cliMeta').textContent = '帮助加载失败'; return; }
     var total = 0;
-    (d.groups || []).forEach(function (g) { total += (g.commands || []).length; });
+    (d.groups || []).forEach(function (g) {
+      (g.commands || []).forEach(function (c) { total += 1 + (c.subcommands || []).length; });
+    });
     $('#cliMeta').textContent = 'v' + (d.version || '-') + ' · 命令 ' + total + ' · 选项 ' + (d.options || []).length;
     $('#cliQuick').innerHTML = (d.quick || []).map(function (g) {
       return '<div class="cmd-group"><h3>' + esc(g.group) + '</h3>' + (g.items || []).map(function (item) {

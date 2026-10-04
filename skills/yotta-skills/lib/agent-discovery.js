@@ -15,6 +15,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const agentDirs = require('./agent-dirs');
+const hostsRegistry = require('./hosts-registry');
 
 const SKILL_FILE = 'SKILL.md';
 const SKIP_DIRS = new Set([
@@ -103,6 +104,15 @@ function addRoot(list, seen, dir, meta) {
     if (meta && meta.label && existing.label === '自动发现目录') existing.label = meta.label;
     if (meta && meta.verified) existing.verified = true;
     if (meta && meta.bridgeOnly) existing.bridgeOnly = true;
+    // 用户注册优先：覆盖分类与手动标记（0.29.0 F2/F3）。
+    if (meta && meta.registry) {
+      existing.registry = true;
+      existing.verified = true;
+      existing.detection = 'user-registry';
+      if (meta.label) existing.label = meta.label;
+      if (meta.agentId) existing.agentId = meta.agentId;
+      if (meta.manualState) existing.manualState = meta.manualState;
+    }
     return;
   }
   const record = {
@@ -115,6 +125,8 @@ function addRoot(list, seen, dir, meta) {
     bridgeOnly: Boolean(meta && meta.bridgeOnly),
     detection: (meta && meta.detection) || 'mapping',
     exists: isDirectory(resolved),
+    registry: Boolean(meta && meta.registry),
+    manualState: (meta && meta.manualState) || null,
   };
   record.skillCount = record.exists ? countSkills(resolved) : 0;
   record.status = record.exists ? 'skills-dir' : 'missing';
@@ -223,15 +235,55 @@ function installedMarkers(options) {
     env['ProgramFiles(x86)'],
   ];
   for (const root of roots) collectMarkerNames(root, 2, names, 800);
-  return [...names].filter((name) => AGENT_HINT.test(name) && !INSTALLED_NOISE.test(name));
+  // 标记过滤：已收录宿主的 label 双向匹配 + 启发式关键词；排除卸载器 / 运行时噪音。
+  return [...names].filter((name) =>
+    (knownLabelMatches(name) || AGENT_HINT.test(name)) && !INSTALLED_NOISE.test(name));
 }
 
+function normalizeLabel(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/** 标记名与已收录宿主 label 的双向词边界包含（"Trae" ↔ "Trae Code CLI"）。 */
 function knownLabelMatches(name) {
-  const normalized = String(name || '').toLowerCase();
+  const normalized = normalizeLabel(name);
+  if (!normalized) return false;
   for (const info of Object.values(agentDirs.AGENT_DIRS)) {
-    if (normalized.includes(String(info.label).toLowerCase())) return true;
+    const label = normalizeLabel(info.label);
+    if (!label) continue;
+    if (normalized === label) return true;
+    if (normalized.startsWith(label + ' ') || normalized.endsWith(' ' + label) || normalized.includes(' ' + label + ' ')) return true;
+    if (label.startsWith(normalized + ' ') || label.endsWith(' ' + normalized) || label.includes(' ' + normalized + ' ')) return true;
   }
   return false;
+}
+
+/**
+ * 应用标记与宿主匹配：label / agentId 与标记名按词边界双向包含。
+ * 例："Claude" 匹配 "Claude Code"；"Trae" 匹配 "Trae Code CLI"；
+ * 避免 "Pi" 误配 "Pilot" 这类裸子串。
+ */
+function markerMatchesHost(markerName, host) {
+  const marker = normalizeLabel(markerName);
+  if (!marker) return false;
+  const candidates = [host && host.label, host && host.agentId].filter(Boolean).map(normalizeLabel);
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (marker === candidate) return true;
+    if (marker.startsWith(candidate + ' ') || marker.endsWith(' ' + candidate) || marker.includes(' ' + candidate + ' ')) return true;
+    if (candidate.startsWith(marker + ' ') || candidate.endsWith(' ' + marker) || candidate.includes(' ' + marker + ' ')) return true;
+  }
+  return false;
+}
+
+/** F3 状态判定：目录 × 实体证据（应用标记 / 用户注册 / 手动标记）。 */
+function judgeHostState(host) {
+  if (host.manualState) return host.manualState; // 手动覆盖（available / orphan / ignored）
+  const entity = Boolean(host.markerEvidence || (host.evidence && host.evidence.registry));
+  if (host.exists && entity) return 'available';
+  if (host.exists) return 'orphan';
+  if (entity) return 'marker-only';
+  return 'missing';
 }
 
 /**
@@ -239,7 +291,9 @@ function knownLabelMatches(name) {
  *
  * Returns:
  *   hosts    - all candidate skill roots (existing and missing known mappings)
- *   installed - installed app markers, including hosts without a skills dir
+ *   installed - entity evidence (app markers + user registry), including hosts
+ *               without a skills dir; plain directory existence is NOT an
+ *               installed marker (0.29.0 F3)
  *   errors   - non-fatal discovery errors
  */
 function discoverHosts(options) {
@@ -253,6 +307,23 @@ function discoverHosts(options) {
   for (const root of agentDirs.envRoots(options)) {
     addRoot(roots, seen, root.dir, { ...root, detection: root.env ? 'env' : 'workspace' });
   }
+  // 合并顺序：内置映射 → 环境变量 → 用户注册表（F2）→ 自动发现；
+  // 同 realpath 用户注册优先（分类 = 已核实，detection = user-registry）。
+  let registry = { hosts: [] };
+  try {
+    registry = hostsRegistry.readHostsRegistry(options);
+  } catch (_) { /* registry 读取失败不影响发现 */ }
+  for (const item of registry.hosts || []) {
+    addRoot(roots, seen, item.dir, {
+      detection: 'user-registry',
+      label: item.label || '自定义宿主',
+      agentId: item.agentId || null,
+      verified: true,
+      known: false,
+      registry: true,
+      manualState: item.manualState || null,
+    });
+  }
   for (const root of commonRoots(options)) {
     for (const found of scanForSkillDirs(root.dir, {
       maxDepth: root.maxDepth,
@@ -265,6 +336,22 @@ function discoverHosts(options) {
     }
   }
 
+  // F3：目录证据与实体证据分开记录，判定生命周期状态。
+  const markers = installedMarkers(options);
+  for (const host of roots) {
+    const markerEvidence = markers.some((name) => markerMatchesHost(name, host));
+    host.markerEvidence = markerEvidence;
+    host.dirEvidence = host.exists;
+    host.evidence = {
+      dir: host.exists,
+      marker: markerEvidence,
+      registry: Boolean(host.registry),
+      manual: Boolean(host.manualState),
+    };
+    host.stateSource = host.manualState ? 'manual' : 'auto';
+    host.state = judgeHostState(host);
+  }
+
   const installed = [];
   const installedSeen = new Set();
   const addInstalled = (name, source) => {
@@ -275,13 +362,16 @@ function discoverHosts(options) {
     installedSeen.add(key);
     installed.push({ label, source, hasSkillsDir: false });
   };
-  for (const name of installedMarkers(options)) {
+  for (const name of markers) {
     if (knownLabelMatches(name) || AGENT_HINT.test(name)) addInstalled(name, '应用标记');
   }
   for (const host of roots) {
+    if (host.detection === 'user-registry') addInstalled(host.label, '用户注册');
+  }
+  for (const host of roots) {
     if (!host.exists) continue;
-    addInstalled(host.label, host.known ? '已知宿主' : '自动发现');
-    const item = installed.find((entry) => entry.label.toLowerCase() === String(host.label).toLowerCase());
+    if (!host.markerEvidence && host.detection !== 'user-registry') continue;
+    const item = installed.find((entry) => markerMatchesHost(entry.label, host));
     if (item) {
       item.hasSkillsDir = true;
       item.skillDir = host.dir;
@@ -303,4 +393,6 @@ module.exports = {
   discoverHosts,
   scanForSkillDirs,
   countSkills,
+  markerMatchesHost,
+  judgeHostState,
 };

@@ -33,6 +33,8 @@ const routeDynamicLib = require('./route-dynamic');
 const providerLib = require('./provider');
 const usageLib = require('./usage-journal');
 const cliHelpLib = require('./cli-help');
+const hostsRegistryLib = require('./hosts-registry');
+const hostPurgeLib = require('./host-purge');
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 8789;
@@ -42,7 +44,7 @@ const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
 const TOKEN_HEADER = 'x-yotta-view-token';
 const TOKEN_PLACEHOLDER = '__YOTTA_VIEW_TOKEN__';
-const CONFIRM = { unlink: 'unlink', rollback: 'rollback', remove: 'remove' };
+const CONFIRM = { unlink: 'unlink', rollback: 'rollback', remove: 'remove', purge: 'purge' };
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 function nowIso() {
@@ -219,6 +221,14 @@ function hostsPayload(ctx) {
       installedMarks: found.installed.length,
       links: links.length,
       brokenLinks: links.filter((link) => link.status !== 'ok').length,
+      // 0.29.0 F3：宿主生命周期状态细分（面板分组 / 筛选）。
+      states: {
+        available: hosts.filter((host) => host.state === 'available').length,
+        orphan: hosts.filter((host) => host.state === 'orphan').length,
+        missing: hosts.filter((host) => host.state === 'missing').length,
+        markerOnly: hosts.filter((host) => host.state === 'marker-only').length,
+        ignored: hosts.filter((host) => host.state === 'ignored').length,
+      },
     },
   };
 }
@@ -525,6 +535,74 @@ function writeRollback(ctx, body) {
   return { code: result.error ? (result.code || 400) : 200, payload: result };
 }
 
+// ── 宿主注册与残留清理（0.29.0 F2/F3） ─────────────────────────────────────
+function auditViewHostEvent(ctx, entry) {
+  try {
+    if (fs.existsSync(ctx.hubDir)) hubLib.appendAudit(ctx.hubDir, entry);
+  } catch (_) { /* 审计失败不阻断主流程 */ }
+}
+
+function writeHostAdd(ctx, body) {
+  const dir = String(body.dir || '').trim();
+  if (!dir) return { code: 400, payload: { error: '缺少目录。' } };
+  const label = String(body.label || '').trim();
+  const result = hostsRegistryLib.addHost(
+    { homeDir: ctx.homeDir, env: ctx.env },
+    { dir, label: label || undefined },
+  );
+  if (!result.ok) return { code: 400, payload: { error: result.error } };
+  auditViewHostEvent(ctx, {
+    event: 'hosts.add',
+    dir: result.entry.dir,
+    label: result.entry.label,
+    agentId: result.entry.agentId,
+    via: 'view',
+  });
+  return { code: 200, payload: { action: 'hosts.add', entry: result.entry } };
+}
+
+function writeHostRemove(ctx, body) {
+  const dir = String(body.dir || '').trim();
+  if (!dir) return { code: 400, payload: { error: '缺少目录。' } };
+  const result = hostsRegistryLib.removeHost({ homeDir: ctx.homeDir, env: ctx.env }, { dir });
+  if (!result.ok) return { code: 400, payload: { error: result.error } };
+  auditViewHostEvent(ctx, {
+    event: 'hosts.remove',
+    dir: result.removed.dir,
+    label: result.removed.label,
+    agentId: result.removed.agentId,
+    via: 'view',
+  });
+  return { code: 200, payload: { action: 'hosts.remove', removed: result.removed } };
+}
+
+function writeHostPurge(ctx, body) {
+  if (String(body.confirm || '') !== CONFIRM.purge) {
+    return { code: 400, payload: { error: '破坏性操作确认不匹配；请确认后再执行。' } };
+  }
+  const dir = String(body.dir || '').trim();
+  if (!dir) return { code: 400, payload: { error: '缺少目录。' } };
+  const result = hostPurgeLib.applyHostPurge({
+    hubDir: ctx.hubDir,
+    dir,
+    homeDir: ctx.homeDir,
+    env: ctx.env,
+  });
+  if (!result.ok) return { code: result.code || 400, payload: { error: result.error, state: result.state || null } };
+  return {
+    code: 200,
+    payload: {
+      action: 'hosts.purge',
+      dir: result.dir,
+      state: result.state,
+      unlinkCount: result.unlinkCount,
+      keptLinks: result.keptLinks,
+      keptEntries: result.keptEntries,
+      trashedTo: result.trashedTo,
+    },
+  };
+}
+
 function json(res, code, value) {
   if (res.writableEnded) return;
   res.writeHead(code, {
@@ -632,6 +710,25 @@ function handleGet(ctx, pathname, url, res) {
     return json(res, 200, removePlanPayload(ctx, slug));
   }
   if (pathname === '/api/hosts') return json(res, 200, hostsPayload(ctx));
+  if (pathname === '/api/hosts/purge-plan') {
+    const dir = url.searchParams.get('dir') || '';
+    if (!dir) return json(res, 400, { error: '缺少 dir 参数（目标宿主目录）。' });
+    const plan = hostPurgeLib.planHostPurge({
+      hubDir: ctx.hubDir,
+      dir,
+      homeDir: ctx.homeDir,
+      env: ctx.env,
+    });
+    if (!plan.ok) return json(res, plan.code || 400, { error: plan.error, state: plan.state || null });
+    return json(res, 200, {
+      dir: plan.target,
+      state: plan.state,
+      unlinkCount: plan.linkSlugs.length,
+      keptLinks: plan.keptLinks,
+      keptEntries: plan.keptEntries,
+      trashedTo: plan.trashPath,
+    });
+  }
   if (pathname === '/api/adopt/scan') return json(res, 200, adoptScanPayload(ctx));
   if (pathname === '/api/links') return json(res, 200, linksPayload(ctx));
   if (pathname === '/api/links/plan') {
@@ -664,6 +761,9 @@ function handlePost(ctx, pathname, req, res) {
       if (pathname === '/api/links/remove') return writeUnlink(ctx, body);
       if (pathname === '/api/rollback/apply') return writeRollback(ctx, body);
       if (pathname === '/api/skills/remove') return writeRemove(ctx, body);
+      if (pathname === '/api/hosts/add') return writeHostAdd(ctx, body);
+      if (pathname === '/api/hosts/remove') return writeHostRemove(ctx, body);
+      if (pathname === '/api/hosts/purge') return writeHostPurge(ctx, body);
       return { code: 404, payload: { error: 'not found' } };
     };
     ctx.queue(run)

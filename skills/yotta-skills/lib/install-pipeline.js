@@ -86,6 +86,25 @@ function createInstaller(deps) {
     if (!opts.force && existingVersion === skill.version) {
       return { skill, status: 'skip', version: existingVersion, note: '已是最新', exitCode: 0 };
     }
+    if (opts.dryRun) {
+      // 0.29.0 D1：只读预览 —— 不发网络请求、不写任何文件（含台账）。
+      const latestUnresolved = skill.version === 'latest';
+      const planned = existingVersion ? 'update' : 'install';
+      return {
+        skill,
+        status: 'planned',
+        planned,
+        version: latestUnresolved ? 'latest' : skill.version,
+        installedVersion: existingVersion,
+        latestUnresolved,
+        note: latestUnresolved
+          ? 'latest（预览不解析）'
+          : planned === 'update'
+            ? '将更新 v' + existingVersion + ' -> v' + skill.version
+            : '将安装 v' + skill.version,
+        exitCode: 0,
+      };
+    }
 
     let tmp = null;
     let staged = null;
