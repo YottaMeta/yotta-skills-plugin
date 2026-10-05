@@ -2,7 +2,7 @@
 /**
  * 元阁独立安装（install-self）与位置查看（where）—— 0.29.0 F1。
  *
- * 独立安装 = 把管理引擎完整运行件（bin / lib / assets / package.json / skills.json）
+ * 独立安装 = 把管理引擎完整运行件（bin / lib / assets / package.json / skills.json / scan-policy.json）
  * 装到用户级独立位置（默认 ~/.yottaskills/yotta-skills；YOTTA_SKILLS_HOME 可覆盖根），
  * 写 <root>/self.json 登记。与 Hub 真源、宿主技能池完全独立：不写宿主配置、
  * 不写 mcp.json、不建全局 shim。
@@ -17,7 +17,7 @@ const hubLib = require('./hub');
 const agentDirsLib = require('./agent-dirs');
 
 const SELF_REGISTRY_VERSION = 1;
-const RUNTIME_PAYLOAD = ['bin', 'lib', 'assets', 'package.json', 'skills.json'];
+const RUNTIME_PAYLOAD = ['bin', 'lib', 'assets', 'package.json', 'skills.json', 'scan-policy.json'];
 const PACKAGE_NAME = '@yottameta/yotta-skills';
 
 function nowIso() {
