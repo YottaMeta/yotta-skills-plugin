@@ -225,6 +225,11 @@
         <div class="empty" id="hostEmpty" hidden>没有匹配的宿主目录。</div>
       </div>
       <div class="section panel"><h3>已安装标记（无技能目录的宿主）</h3><div class="list" id="hostMarks"></div></div>
+      <div class="section panel" id="hostExcludedWrap" hidden>
+        <h3>不接管名单</h3>
+        <div class="faint">这些宿主 / 目录在发现、显示、链接三层全部跳过（--include-discovered 也不纳入）。</div>
+        <div class="list" id="hostExcluded"></div>
+      </div>
     </section>
 
     <section class="view" id="view-adopt">
@@ -532,13 +537,20 @@
     if (d.error) { toast(d.error); return; }
     state.hosts = d;
     var s = d.summary.states || {};
-    $('#hostSummary').textContent = '可用 ' + (s.available || 0) + ' · 残留 ' + (s.orphan || 0) + ' · 未创建 ' + (s.missing || 0) + ' · 仅标记 ' + (s.markerOnly || 0) + (s.ignored ? ' · 已忽略 ' + s.ignored : '') + ' · 链接 ' + d.summary.links + '（异常 ' + d.summary.brokenLinks + '）';
+    $('#hostSummary').textContent = '可用 ' + (s.available || 0) + ' · 残留 ' + (s.orphan || 0) + ' · 未创建 ' + (s.missing || 0) + ' · 仅标记 ' + (s.markerOnly || 0) + (s.ignored ? ' · 已忽略 ' + s.ignored : '') + (d.summary.excluded ? ' · 不接管 ' + d.summary.excluded : '') + ' · 链接 ' + d.summary.links + '（异常 ' + d.summary.brokenLinks + '）';
     renderHostStateChips();
     renderHosts();
-    var marks = d.installed || [];
+    var marks = d.unpaired || [];
     $('#hostMarks').innerHTML = marks.length ? marks.map(function (m) {
-      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(m.label) + '</div><div class="row-meta">' + esc(m.source || '') + (m.hasSkillsDir ? ' · 技能目录：' + esc(m.skillDir || '') : ' · 未发现技能目录') + '</div></div><span class="badge ' + (m.hasSkillsDir ? 'ok' : 'info') + '">' + esc(m.hasSkillsDir ? '可链接' : '仅标记') + '</span></div>';
-    }).join('') : '<div class="empty">没有检测到额外宿主标记。</div>';
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(m.label) + '</div><div class="row-meta">' + esc(m.source || '') + ' · 未发现技能目录</div></div><span class="badge info">仅标记</span></div>';
+    }).join('') : '<div class="empty">没有未配对的宿主标记。</div>';
+    renderHostExcluded(d.excluded || []);
+  }
+  function renderHostExcluded(list) {
+    $('#hostExcludedWrap').hidden = list.length === 0;
+    $('#hostExcluded').innerHTML = list.map(function (item) {
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(item.label || item.value) + '</div><div class="row-meta mono">' + esc(item.value) + ' · ' + esc(item.kind === 'agent' ? '智能体' : '目录') + '</div></div><div class="row-actions"><button class="btn small" data-host-include="' + esc(item.value) + '">恢复接管</button></div></div>';
+    }).join('');
   }
   function renderHostStateChips() {
     var d = state.hosts; if (!d) return;
@@ -570,10 +582,23 @@
       return String(h.label || '').toLowerCase().includes(q) || String(h.dir || '').toLowerCase().includes(q);
     });
     $('#hostEmpty').hidden = rows.length > 0;
+    var overrideIds = {};
+    ((d.overrides) || []).forEach(function (o) { overrideIds[String(o.agentId).toLowerCase()] = true; });
     $('#hostRows').innerHTML = rows.map(function (h) {
-      var scopeBadge = h.bridgeOnly ? '<span class="badge info">桥接·不链</span>' : (h.detection === 'user-registry' ? '<span class="badge info">用户注册</span>' : h.verified ? '<span class="badge ok">已核实</span>' : '<span class="badge warn">自动发现</span>');
+      var scopeBadge = h.bridgeOnly ? '<span class="badge info">桥接·不链</span>'
+        : (h.detection === 'user-registry' ? '<span class="badge info">用户注册</span>'
+        : (h.detection === 'override' ? '<span class="badge ok">目录覆盖</span>'
+        : (h.verified ? '<span class="badge ok">已核实</span>'
+        : ((h.detection === 'discovered' || h.detection === 'workspace') ? '<span class="badge warn">自动发现</span>' : '<span class="badge warn">映射·未核实</span>'))));
       var action = '';
       if (h.exists && h.state === 'orphan' && !h.bridgeOnly) action += '<button class="btn small danger" data-host-purge="' + esc(h.dir) + '">清理</button> ';
+      if (h.state === 'ignored') action += '<button class="btn small" data-host-mark="' + esc(h.dir) + '" data-mark-state="available">标记可用</button> ';
+      else if (h.exists && !h.bridgeOnly) action += '<button class="btn small" data-host-mark="' + esc(h.dir) + '" data-mark-state="ignored">忽略</button> ';
+      if (h.agentId && !h.bridgeOnly) {
+        if (overrideIds[String(h.agentId).toLowerCase()]) action += '<button class="btn small" data-host-clear="' + esc(h.agentId) + '">恢复默认</button> ';
+        else action += '<button class="btn small" data-host-edit="' + esc(h.agentId) + '" data-host-dir="' + esc(h.dir) + '" data-host-label="' + esc(h.label) + '">编辑目录</button> ';
+      }
+      if (!h.bridgeOnly) action += '<button class="btn small" data-host-exclude="' + esc(h.agentId || h.dir) + '">不接管</button> ';
       if (h.detection === 'user-registry') action += '<button class="btn small" data-host-unregister="' + esc(h.dir) + '">移除注册</button>';
       return '<tr><td><div class="cell-main">' + esc(h.label) + '</div><div class="cell-sub">' + esc(h.agentId || (h.known ? '已知宿主' : h.detection || '自动发现')) + '</div></td>' +
         '<td><div class="mono">' + esc(h.dir) + '</div><button class="btn small" data-copy="' + esc(h.dir) + '">复制</button></td>' +
@@ -624,11 +649,64 @@
       loadHosts();
     });
   }
+  function openHostEditModal(agentId, dir, label) {
+    var body = '<p class="label">覆盖「' + esc(label) + '」的技能目录（写入 hosts.json，不改宿主配置）。被覆盖的旧目录不再进入默认发现 / 链接。</p>' +
+      '<div class="section"><label class="label">新目录（必须已存在）</label><input id="hostEditDir" value="' + esc(dir) + '"></div>';
+    openModal('编辑目录 · ' + esc(agentId), body, {
+      okText: '保存覆盖',
+      onOk: async function () {
+        var value = ($('#hostEditDir') && $('#hostEditDir').value || '').trim();
+        if (!value) { toast('请填写目录'); return; }
+        var r = await api('/api/hosts/set', { body: { agentId: agentId, dir: value } });
+        if (r.error) { toast(r.error); return; }
+        closeModal();
+        toast('已覆盖目录');
+        loadHosts();
+      },
+    });
+  }
   $('#hostRows').addEventListener('click', async function (e) {
     var copyBtn = e.target.closest('[data-copy]');
     if (copyBtn) { copyText(copyBtn.dataset.copy); return; }
     var purgeBtn = e.target.closest('[data-host-purge]');
     if (purgeBtn) { openHostPurgeModal(purgeBtn.dataset.hostPurge); return; }
+    var editBtn = e.target.closest('[data-host-edit]');
+    if (editBtn) {
+      openHostEditModal(editBtn.dataset.hostEdit, editBtn.dataset.hostDir, editBtn.dataset.hostLabel);
+      return;
+    }
+    var clearBtn = e.target.closest('[data-host-clear]');
+    if (clearBtn) {
+      var clearAgent = clearBtn.dataset.hostClear;
+      confirmModal('恢复默认目录？', '<p class="label">删除目录覆盖，恢复内置映射。</p><div class="mono">' + esc(clearAgent) + '</div>', '恢复默认', false, async function () {
+        var r = await api('/api/hosts/set', { body: { agentId: clearAgent, clear: true } });
+        if (r.error) { toast(r.error); return; }
+        closeModal();
+        toast('已恢复内置映射');
+        loadHosts();
+      });
+      return;
+    }
+    var excludeBtn = e.target.closest('[data-host-exclude]');
+    if (excludeBtn) {
+      var excludeTarget = excludeBtn.dataset.hostExclude;
+      confirmModal('加入「不接管」名单？', '<p class="label">该宿主 / 目录将从发现、显示、链接三层全部跳过；已建立的链接不受影响（可用 CLI hub unlink 清理）。</p><div class="mono">' + esc(excludeTarget) + '</div>', '不接管', false, async function () {
+        var r = await api('/api/hosts/exclude', { body: { target: excludeTarget } });
+        if (r.error) { toast(r.error); return; }
+        closeModal();
+        toast('已加入不接管名单');
+        loadHosts();
+      });
+      return;
+    }
+    var markBtn = e.target.closest('[data-host-mark]');
+    if (markBtn) {
+      var r = await api('/api/hosts/mark', { body: { dir: markBtn.dataset.hostMark, state: markBtn.dataset.markState } });
+      if (r.error) { toast(r.error); return; }
+      toast('已标记：' + markBtn.dataset.markState);
+      loadHosts();
+      return;
+    }
     var unregBtn = e.target.closest('[data-host-unregister]');
     if (unregBtn) {
       var dir = unregBtn.dataset.hostUnregister;
@@ -640,6 +718,14 @@
         loadHosts();
       });
     }
+  });
+  $('#hostExcluded').addEventListener('click', async function (e) {
+    var includeBtn = e.target.closest('[data-host-include]');
+    if (!includeBtn) return;
+    var r = await api('/api/hosts/include', { body: { target: includeBtn.dataset.hostInclude } });
+    if (r.error) { toast(r.error); return; }
+    toast('已恢复接管');
+    loadHosts();
   });
 
   async function loadAdopt() {

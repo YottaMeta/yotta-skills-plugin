@@ -82,6 +82,7 @@ function isNoisePath(dir, baseDir) {
     if (part === 'temp' || part === 'tmp') return true;
     if (/\.bak$/.test(part)) return true;
     if (part === 'plugin-sources' || part === 'plugins' || part === 'node_modules') return true;
+    if (part === '.yottacode') return true;
     if (part === 'candidate' || part.startsWith('candidate-') || part.includes('staging')) return true;
     if (part === 'memories' || part === 'connectors' || part === 'workspace') return true;
   }
@@ -192,7 +193,7 @@ function commonRoots(options) {
   add(env.OPENCLAW_STATE_DIR, 2);
   add(env.CLAUDE_CONFIG_DIR, 2);
   add(env.CODEX_HOME, 2);
-  add(env.YOTTACODE_HOME, 2);
+  // YOTTACODE_HOME 不扫描（YottaCode 自带三层技能管理，0.29.1 U2）。
 
   // A portable agent install often lives beside the current workspace. The
   // scanner only follows agent-looking branches, so this stays bounded.
@@ -287,6 +288,28 @@ function judgeHostState(host) {
 }
 
 /**
+ * 0.29.1 U2：installed 配对优先级 ——
+ * user-registry / 目录覆盖 / 已核实映射 > env > 未核实映射 > 自动发现。
+ */
+function hostPairingPriority(host) {
+  if (host.detection === 'user-registry' || host.registry) return 0;
+  if (host.detection === 'override') return 1;
+  if (host.verified && host.detection === 'mapping') return 1;
+  if (host.detection === 'env') return 2;
+  if (host.detection === 'mapping') return 3;
+  return 4;
+}
+
+/** 同级按技能数降序 + 路径稳定排序（消除 last-write-wins）。 */
+function compareHostCandidates(a, b) {
+  const priority = hostPairingPriority(a) - hostPairingPriority(b);
+  if (priority) return priority;
+  const count = (b.skillCount || 0) - (a.skillCount || 0);
+  if (count) return count;
+  return String(a.dir).localeCompare(String(b.dir));
+}
+
+/**
  * Discover hosts and their skill directories.
  *
  * Returns:
@@ -301,19 +324,56 @@ function discoverHosts(options) {
   const seen = new Map();
   const errors = [];
 
+  // 0.29.1 U2：用户级「不接管」名单 + 目录覆盖（hosts.json；旧文件向后兼容）。
+  let registry = { hosts: [], excluded: [], overrides: [] };
+  try {
+    registry = hostsRegistry.readHostsRegistry(options);
+  } catch (_) { /* registry 读取失败不影响发现 */ }
+  const overridesByAgent = new Map(
+    (registry.overrides || []).map((item) => [String(item.agentId).toLowerCase(), item]),
+  );
+  const previousDirKeys = new Set();
+  for (const item of registry.overrides || []) {
+    for (const prev of item.previousDirs || []) previousDirKeys.add(normalizePath(prev).toLowerCase());
+  }
+  // YottaCode 不接管：.yottacode 路径 + YOTTACODE_HOME 整棵子树（含任意自定义目录名）。
+  const yottacodeHome = envObject(options).YOTTACODE_HOME
+    ? path.resolve(envObject(options).YOTTACODE_HOME)
+    : null;
+  const isYottaCodePath = (dir) => {
+    if (!dir) return false;
+    if (agentDirs.isYottaCodeDir(dir)) return true;
+    if (!yottacodeHome) return false;
+    const resolved = path.resolve(dir);
+    const relative = path.relative(yottacodeHome, resolved);
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  };
+  const isExcluded = (meta) => Boolean(hostsRegistry.excludedEntryFor(registry, meta || {}));
+  const skipDir = (dir, agentId) => isYottaCodePath(dir) || isExcluded({ dir, agentId });
+
   for (const root of agentDirs.knownRoots(options)) {
+    const override = root.agentId ? overridesByAgent.get(String(root.agentId).toLowerCase()) : null;
+    if (override) {
+      if (skipDir(override.dir, root.agentId)) continue;
+      addRoot(roots, seen, override.dir, {
+        ...root,
+        label: override.label || root.label,
+        verified: true,
+        detection: 'override',
+      });
+      continue;
+    }
+    if (skipDir(root.dir, root.agentId)) continue;
     addRoot(roots, seen, root.dir, { ...root, detection: 'mapping' });
   }
   for (const root of agentDirs.envRoots(options)) {
+    if (skipDir(root.dir, root.agentId)) continue;
     addRoot(roots, seen, root.dir, { ...root, detection: root.env ? 'env' : 'workspace' });
   }
   // 合并顺序：内置映射 → 环境变量 → 用户注册表（F2）→ 自动发现；
   // 同 realpath 用户注册优先（分类 = 已核实，detection = user-registry）。
-  let registry = { hosts: [] };
-  try {
-    registry = hostsRegistry.readHostsRegistry(options);
-  } catch (_) { /* registry 读取失败不影响发现 */ }
   for (const item of registry.hosts || []) {
+    if (skipDir(item.dir, item.agentId)) continue;
     addRoot(roots, seen, item.dir, {
       detection: 'user-registry',
       label: item.label || '自定义宿主',
@@ -329,6 +389,9 @@ function discoverHosts(options) {
       maxDepth: root.maxDepth,
       baseDir: options.homeDir || os.homedir(),
     })) {
+      if (skipDir(found.dir, null)) continue;
+      // 被目录覆盖替换掉的旧映射目录不再进入默认发现 / 链接。
+      if (previousDirKeys.has(normalizePath(found.dir).toLowerCase())) continue;
       addRoot(roots, seen, found.dir, {
         detection: 'discovered',
         label: '自动发现：' + path.basename(found.parent),
@@ -362,22 +425,43 @@ function discoverHosts(options) {
     installedSeen.add(key);
     installed.push({ label, source, hasSkillsDir: false });
   };
+  // 0.29.1 U2：不接管（excluded）/ neverLink（YottaCode）宿主的应用标记同样跳过显示。
+  const isMarkerSuppressed = (name) => {
+    for (const [agentId, info] of Object.entries(agentDirs.AGENT_DIRS)) {
+      if (!info.neverLink) continue;
+      if (markerMatchesHost(name, { agentId, label: info.label })) return true;
+    }
+    return (registry.excluded || []).some((item) => {
+      if (item.kind !== 'agent') return false;
+      const info = agentDirs.AGENT_DIRS[String(item.value).toLowerCase()] || {};
+      return markerMatchesHost(name, { agentId: item.value, label: info.label || item.value });
+    });
+  };
   for (const name of markers) {
+    if (isMarkerSuppressed(name)) continue;
     if (knownLabelMatches(name) || AGENT_HINT.test(name)) addInstalled(name, '应用标记');
   }
   for (const host of roots) {
     if (host.detection === 'user-registry') addInstalled(host.label, '用户注册');
   }
+  // 0.29.1 U2：配对确定性优选（先收集全部候选，再按优先级选定），消除 last-write-wins。
+  const pairCandidates = new Map();
   for (const host of roots) {
     if (!host.exists) continue;
     if (!host.markerEvidence && host.detection !== 'user-registry') continue;
-    const item = installed.find((entry) => markerMatchesHost(entry.label, host));
-    if (item) {
-      item.hasSkillsDir = true;
-      item.skillDir = host.dir;
-      item.skillCount = host.skillCount;
-      item.agentId = host.agentId;
+    for (const item of installed) {
+      if (!markerMatchesHost(item.label, host)) continue;
+      if (!pairCandidates.has(item)) pairCandidates.set(item, []);
+      pairCandidates.get(item).push(host);
     }
+  }
+  for (const [item, hosts] of pairCandidates) {
+    hosts.sort(compareHostCandidates);
+    const host = hosts[0];
+    item.hasSkillsDir = true;
+    item.skillDir = host.dir;
+    item.skillCount = host.skillCount;
+    item.agentId = host.agentId;
   }
 
   return {
@@ -388,6 +472,19 @@ function discoverHosts(options) {
   };
 }
 
+/**
+ * 0.29.1 U2：未配对且无技能目录的已安装标记（CLI / 面板共用单一真源）。
+ * 已配对（hasSkillsDir）或 label 与已显示宿主重复的标记不再出现在「无技能目录」区。
+ */
+function unpairedMarkers(discovery) {
+  const shown = new Set();
+  for (const host of (discovery && discovery.hosts) || []) {
+    if (host.exists || host.state === 'marker-only') shown.add(String(host.label).toLowerCase());
+  }
+  return ((discovery && discovery.installed) || []).filter((item) =>
+    !item.hasSkillsDir && !shown.has(String(item.label).toLowerCase()));
+}
+
 module.exports = {
   AGENT_HINT,
   discoverHosts,
@@ -395,4 +492,5 @@ module.exports = {
   countSkills,
   markerMatchesHost,
   judgeHostState,
+  unpairedMarkers,
 };

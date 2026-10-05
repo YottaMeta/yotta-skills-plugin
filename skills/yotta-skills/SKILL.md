@@ -1,7 +1,7 @@
 ---
 name: yotta-skills
-version: 0.29.0
-description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点 + 本机技能 Hub + 运行时 hook 适配。Hub 层：hub hosts 只读发现本机已装智能体与技能目录（文件系统优先，不读元忆；已核实 / 自动发现 / 桥接分类 + 状态细分：可用 / 残留（实体未确认）/ 未创建 / 仅标记）；hub hosts add/remove/list/mark 注册自定义宿主目录与手动标记（只注册不建目录、移除不删目录；残留清理 hub hosts remove --purge 默认预览、目录入回收站 7 天）；install-self / where 把元阁管理引擎独立安装（默认 ~/.yottaskills/yotta-skills，--dir 指定）并查看运行位置；hub install / update 把技能装到 ~/.yottaskills/hub 单点真源（清单 27 + 特殊家族 5，特殊家族跟随各自 npm latest）；hub link --all 用 Windows junction / POSIX symlink 分发到全部已核实宿主（默认范围；--include-discovered 显式纳入自动发现目录；锁 / 数据桥接目录永不链接），元技能在链接时收敛宿主旧副本（移入 ~/.yottaskills/trash 保留 7 天、版本闸门 Hub ≥ 宿主）；hub unlink 只删链接、fail-closed；非元技能不参与更新（用户自行处理）；hub status 显示来源、版本、链接与异常；view 启动本机技能枢纽面板（默认 127.0.0.1:8789，六视图 + 高级 CLI 页，写操作需页面令牌与确认）；兼容 agentskills.io 技能格式、Vercel Labs skills CLI 的 .agents/skills 通用目录与 .skill-lock.json v3（只读）。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；M1 记忆裁决层：usage enable/mark 本地结构化记录 + decide-memory / MCP decide_memory 输出 promote / hold / demote 只读建议（需授权 provider；只建议不删除、不自动写元忆）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么组合使用（安装与调用均由用户确认后执行）」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录（默认 --pin 锁死清单精确版本）；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工只建议跑本地 --reindex；更新检查走手动 --check 或后台 --check --scheduled）；运行时适配层：hook capabilities / evaluate / bind / unbind 按宿主能力矩阵执行六个统一事件并留证降级，元信 before_install 已接入安装管线；自包含零依赖，不依赖任何元技能；MCP 按需加载且需用户确认后写入配置（可选：list_installed_skills/describe_skill/reindex/route_request/decide_memory，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / usage 使用记录 / decide-memory 记忆裁决 / hub 技能 Hub / install-self 独立安装 / where 位置查看 / install / update / update --check（只读检查）/ update --check --scheduled（后台周检）/ update --auto（家族自动更新）/ hook 适配 / --inventory / --reindex / --dry-run 预览 / --pin（默认）/ --range。触发：需要批量安装或更新元阁全家技能、单点安装并分发到多个智能体、查看本机装了哪些智能体与技能目录、接管非元技能、按场景组合多个元技能、路由或判断该用哪些技能、判断哪些技能值得长期记忆、查看或记录技能使用信号、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、评估宿主 hook 能力、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/hook 适配/该用哪个技能/路由技能/记忆裁决/技能该不该记住/盘点技能/查看已装技能/技能 Hub/单点安装/链接分发/接管技能/技能枢纽面板/图形化面板/独立安装元阁/查看元阁位置/自定义宿主/残留清理/宿主状态 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + M1 记忆裁决只读建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index + Hub 本机真源与链接分发 + hook 适配」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能、不静默写宿主配置或全局记忆、不自动删除技能或记忆；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
+version: 0.29.1
+description: 元阁 -- 元阁全家技能的总编排策划 + 编排路由 + 一键安装器 + 技能盘点 + 本机技能 Hub + 运行时 hook 适配。Hub 层：hub hosts 只读发现本机已装智能体与技能目录（文件系统优先，不读元忆；已核实 / 自动发现 / 桥接分类 + 状态细分：可用 / 残留（实体未确认）/ 未创建 / 仅标记）；hub hosts add/remove/list/mark/exclude/include/set 注册自定义宿主目录、手动标记、不接管开关与目录覆盖（只注册不建目录、移除不删目录；残留清理 hub hosts remove --purge 默认预览、目录入回收站 7 天；YottaCode 不纳入接管）；install-self / where 把元阁管理引擎独立安装（默认 ~/.yottaskills/yotta-skills，--dir 指定）并查看运行位置；hub install / update 把技能装到 ~/.yottaskills/hub 单点真源（清单 27 + 特殊家族 5，特殊家族跟随各自 npm latest；update / hub update 只升不降，--force 才显式降级）；hub link --all 用 Windows junction / POSIX symlink 分发到全部已核实宿主（默认范围；--include-discovered 显式纳入自动发现目录；锁 / 数据桥接目录永不链接），元技能在链接时收敛宿主旧副本（移入 ~/.yottaskills/trash 保留 7 天、版本闸门 Hub ≥ 宿主）；hub unlink 只删链接、fail-closed；非元技能不参与更新（用户自行处理）；hub status 显示来源、版本、链接与异常；view 启动本机技能枢纽面板（默认 127.0.0.1:8789，六视图 + 高级 CLI 页，写操作需页面令牌与确认）；兼容 agentskills.io 技能格式、Vercel Labs skills CLI 的 .agents/skills 通用目录与 .skill-lock.json v3（只读）。路由层：--route / route_request 按需求摘要给出候选组合、调用顺序、角色、置信度、依据、已装/缺失状态与安装命令，只建议不自动安装；非元阁家族已装技能按 frontmatter description 机械匹配作并列候选（标注来源与未扫描状态，只读不自动调用）；M1 记忆裁决层：usage enable/mark 本地结构化记录 + decide-memory / MCP decide_memory 输出 promote / hold / demote 只读建议（需授权 provider；只建议不删除、不自动写元忆）；策划层：按场景给出「该组合哪几个元技能、组合强在哪、怎么组合使用（安装与调用均由用户确认后执行）」；安装层：一条命令把 YottaMeta 已发布的全部 yotta-* 技能装进指定智能体或目录（默认 --pin 锁死清单精确版本）；盘点层：--inventory / --reindex 扫描本机已装技能生成/更新注册表，新装技能自动被发现（install/update 后自动 re-index，会话开工只建议跑本地 --reindex；更新检查走手动 --check 或后台 --check --scheduled）；运行时适配层：hook capabilities / evaluate / bind / unbind 按宿主能力矩阵执行六个统一事件并留证降级，元信 before_install 已接入安装管线；自包含零依赖，不依赖任何元技能；MCP 按需加载且需用户确认后写入配置（可选：list_installed_skills/describe_skill/reindex/route_request/decide_memory，不常驻，未加载降级 CLI）。支持 --list 清单 / --route 路由 / usage 使用记录 / decide-memory 记忆裁决 / hub 技能 Hub / install-self 独立安装 / where 位置查看 / install / update / update --check（只读检查）/ update --check --scheduled（后台周检）/ update --auto（家族自动更新）/ hook 适配 / --inventory / --reindex / --dry-run 预览 / --pin（默认）/ --range。触发：需要批量安装或更新元阁全家技能、单点安装并分发到多个智能体、查看本机装了哪些智能体与技能目录、接管非元技能、按场景组合多个元技能、路由或判断该用哪些技能、判断哪些技能值得长期记忆、查看或记录技能使用信号、盘点或查看本机已装技能、重扫技能注册表、给某个智能体或目录一次性铺齐 yotta-* 技能、评估宿主 hook 能力、预览安装清单、锁版本安装、或用户说 元阁/装全家/一次装齐/yotta-skills/install-all/更新全家/检查更新/自动更新/hook 适配/该用哪个技能/路由技能/记忆裁决/技能该不该记住/盘点技能/查看已装技能/技能 Hub/单点安装/链接分发/接管技能/技能枢纽面板/图形化面板/独立安装元阁/查看元阁位置/自定义宿主/残留清理/宿主状态 等。边界（Do NOT trigger）：只做「组合策划 + 静态路由建议 + M1 记忆裁决只读建议 + 清单 + 下载 + 落位 + 汇总 + 盘点 + re-index + Hub 本机真源与链接分发 + hook 适配」，不含技能本体、不做技能内容开发、不 -g 污染全局、不自动安装缺失技能、不静默写宿主配置或全局记忆、不自动删除技能或记忆；家族安装先自举或调用元信装前门禁，DO NOT INSTALL 阻断，非元阁家族包不自动安装。
 license: MIT
 metadata:
   zh_name: 元阁
@@ -147,7 +147,7 @@ npx -y @yottameta/yotta-skills install --dir ~/my-skills
 # 只装单个 / 多个技能（按编排策划选组合时常用）
 npx -y @yottameta/yotta-skills install yotta-memory yotta-verify --dir ~/my-skills
 
-# 增量更新已装技能（补齐缺失 / 版本不一致）
+# 增量更新已装技能（补齐缺失 + 升级；只升不降：本地更高保留不降级，--force 才显式降级）
 npx -y @yottameta/yotta-skills update --agent codex
 
 # 只读检查有没有更新（联网对 npm 最新，不改动；0=全部最新 / 3=有更新 / 1=查失败）
@@ -227,6 +227,12 @@ npx -y @yottameta/yotta-skills hub hosts mark ~/my-agent/skills --state orphan
 npx -y @yottameta/yotta-skills hub hosts remove ~/my-agent/skills --purge
 npx -y @yottameta/yotta-skills hub hosts remove ~/my-agent/skills --purge --yes
 
+# 5d) 不接管 / 目录覆盖（发现 / 显示 / 链接三层跳过；恢复用 include；set 覆盖内置映射）
+npx -y @yottameta/yotta-skills hub hosts exclude box
+npx -y @yottameta/yotta-skills hub hosts include box
+npx -y @yottameta/yotta-skills hub hosts set box --dir "D:\box-agent\skills"
+npx -y @yottameta/yotta-skills hub hosts set box --clear
+
 # 6) 本地面板：预览、确认、执行、留证（仅 127.0.0.1:8789）
 npx -y @yottameta/yotta-skills view
 
@@ -253,6 +259,15 @@ npx -y @yottameta/yotta-skills hub remove my-skill --dry-run
 **仅标记**（已装实体、技能目录未创建）；`hub doctor` 的 `host_state` 检查只读提示，
 不判 fail。残留清理 = `hub hosts remove <目录> --purge`（默认预览，`--yes` 执行；
 只删指向 Hub 的链接，非 Hub 链接 / 非技能内容随目录保留在回收站 7 天）。
+
+不接管与目录覆盖（0.29.1 起）：`hub hosts exclude <agentId|目录>` 把目标从发现、
+显示、链接三层全部跳过（`--include-discovered` 也不纳入；已建链接不受影响，可
+`hub unlink` 清理），`hub hosts include` 恢复接管；`hub hosts set <agentId> --dir <目录>`
+用户级覆盖内置映射（被覆盖旧目录不再进入默认发现 / 链接），`--clear` 恢复默认。
+面板「宿主矩阵」提供等价动作（不接管 / 恢复接管 / 编辑目录 / 标记可用 / 忽略），
+写操作均写 Hub 审计。**YottaCode 不纳入接管**（自带三层技能管理；`.yottacode` 与
+`YOTTACODE_HOME` 在映射 / 扫描 / 注册 / 标记 / 链接全部排除）。未核实映射显示
+「映射·未核实」，「自动发现」只用于文件系统扫描结果。
 
 宿主发现兼容 `agentskills.io` 技能格式与 Vercel Labs `skills` CLI 的
 `.agents/skills` 通用目录；已收录 81 条宿主映射，并只读兼容

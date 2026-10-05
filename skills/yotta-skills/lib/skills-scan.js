@@ -113,6 +113,30 @@ function compareSemver(left, right) {
   return comparePrerelease(a.prerelease, b.prerelease);
 }
 
+/**
+ * 版本关系判定（元阁 update「只升不降」统一口径，0.29.1 U1）。
+ *
+ * installed：本地已装版本（null = 未装）；target：目标版本（精确 semver 或 'latest'）。
+ * 返回：
+ * - install：本地未装（含 target = latest，解析后照常安装）
+ * - upgrade：本地低于目标（唯一应安装的关系）
+ * - equal：本地与目标相等
+ * - local-ahead：本地高于目标（保留，不降级）
+ * - unknown：任一侧无法解析（fail-safe 保留）
+ * - resolve-needed：目标为 latest（需先解析出精确版本再复判）
+ *
+ * 注意：compareSemver 对不可解析输入返回 0，必须先 parseSemver 校验，
+ * 不能直接拿 compare === 0 当相等。
+ */
+function versionRelation(installed, target) {
+  if (!installed) return 'install';
+  if (target === 'latest') return 'resolve-needed';
+  if (!parseSemver(installed) || !parseSemver(target)) return 'unknown';
+  const diff = compareSemver(installed, target);
+  if (diff === 0) return 'equal';
+  return diff > 0 ? 'local-ahead' : 'upgrade';
+}
+
 /** 从多个安装副本中选择代表版本：优先合法版本中的最高 semver。 */
 function selectRepresentativeVariant(variants) {
   let selected = null;
@@ -436,6 +460,7 @@ module.exports = {
   parseFrontmatter,
   parseSemver,
   compareSemver,
+  versionRelation,
   strictFrontmatterWarnings,
   scanSkillDir,
   defaultRoots,

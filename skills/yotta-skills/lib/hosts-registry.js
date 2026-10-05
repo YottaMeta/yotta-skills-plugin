@@ -42,10 +42,19 @@ function readHostsRegistry(opts) {
       return {
         version: HOSTS_REGISTRY_VERSION,
         hosts: value.hosts.filter((item) => item && typeof item.dir === 'string' && item.dir),
+        // 0.29.1 U2：不接管名单 + 目录覆盖（可选字段，向后兼容旧文件）。
+        excluded: Array.isArray(value.excluded)
+          ? value.excluded.filter((item) => item && typeof item.value === 'string' && item.value &&
+              (item.kind === 'agent' || item.kind === 'dir'))
+          : [],
+        overrides: Array.isArray(value.overrides)
+          ? value.overrides.filter((item) => item && typeof item.agentId === 'string' && item.agentId &&
+              typeof item.dir === 'string' && item.dir)
+          : [],
       };
     }
   } catch (_) { /* missing or corrupt registry falls back to empty */ }
-  return { version: HOSTS_REGISTRY_VERSION, hosts: [] };
+  return { version: HOSTS_REGISTRY_VERSION, hosts: [], excluded: [], overrides: [] };
 }
 
 function writeHostsRegistry(opts, registry) {
@@ -55,6 +64,8 @@ function writeHostsRegistry(opts, registry) {
   fs.writeFileSync(tmp, JSON.stringify({
     version: HOSTS_REGISTRY_VERSION,
     hosts: registry.hosts,
+    excluded: registry.excluded || [],
+    overrides: registry.overrides || [],
   }, null, 2) + '\n', 'utf8');
   fs.renameSync(tmp, file);
   return file;
@@ -84,6 +95,14 @@ function isInside(root, target) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+/** YottaCode 目标判定：.yottacode 路径或 YOTTACODE_HOME 子树（0.29.1 U2）。 */
+function isYottaCodeTarget(dir, opts) {
+  if (agentDirsLib.isYottaCodeDir(dir)) return true;
+  const env = (opts && opts.env) || process.env;
+  const ycHome = env.YOTTACODE_HOME ? path.resolve(env.YOTTACODE_HOME) : null;
+  return Boolean(ycHome && dir && isInside(ycHome, dir));
+}
+
 /** fail-closed 校验：返回中文错误或 null。 */
 function validateHostDir(dir, opts) {
   const target = path.resolve(dir);
@@ -100,6 +119,9 @@ function validateHostDir(dir, opts) {
   }
   if (agentDirsLib.isBridgeOnlyDir(target, opts)) {
     return '锁 / 数据桥接目录不允许注册：' + target;
+  }
+  if (isYottaCodeTarget(target, opts)) {
+    return 'YottaCode 自带三层技能管理（skill-inventory / skill / user-skills），不纳入元阁接管：' + target;
   }
   return null;
 }
@@ -165,6 +187,9 @@ function markHost(opts, input) {
   }
   const dir = input && input.dir ? path.resolve(input.dir) : null;
   if (!dir) return { ok: false, error: '缺少目录' };
+  if (isYottaCodeTarget(dir, options)) {
+    return { ok: false, error: 'YottaCode 自带三层技能管理，不纳入元阁接管，不能标记：' + dir };
+  }
   const registry = readHostsRegistry(options);
   let entry = registry.hosts.find((item) => samePath(item.dir, dir));
   if (!entry) {
@@ -181,6 +206,118 @@ function markHost(opts, input) {
   return { ok: true, entry, registry };
 }
 
+/** 0.29.1 U2：不接管名单匹配（agentId 或目录）；返回命中条目或 null。 */
+function excludedEntryFor(registry, input) {
+  const agentId = input && input.agentId ? String(input.agentId).toLowerCase() : null;
+  const dir = input && input.dir ? path.resolve(input.dir) : null;
+  for (const item of (registry && registry.excluded) || []) {
+    if (!item) continue;
+    if (item.kind === 'agent' && agentId && String(item.value).toLowerCase() === agentId) return item;
+    if (item.kind === 'dir' && dir && samePath(item.value, dir)) return item;
+  }
+  return null;
+}
+
+/** 目标归类：已收录 agentId -> agent；否则按目录。 */
+function classifyExcludeTarget(target) {
+  const value = String(target || '').trim();
+  const agentId = value.toLowerCase();
+  if (agentDirsLib.AGENT_DIRS[agentId]) return { kind: 'agent', value: agentId };
+  return { kind: 'dir', value: path.resolve(value) };
+}
+
+/**
+ * 加入「不接管」名单（0.29.1 U2）：发现 / 显示 / 链接三层全部跳过，
+ * `--include-discovered` 也不纳入；幂等。
+ */
+function excludeHost(opts, input) {
+  const options = opts || {};
+  const target = input && input.target ? String(input.target).trim() : '';
+  if (!target) return { ok: false, error: '缺少目标：hub hosts exclude <agentId|目录>' };
+  const { kind, value } = classifyExcludeTarget(target);
+  if (kind === 'dir') {
+    if (isYottaCodeTarget(value, options)) {
+      return { ok: false, error: 'YottaCode 自带三层技能管理，不纳入元阁接管，无需加入不接管名单：' + value };
+    }
+    if (agentDirsLib.isBridgeOnlyDir(value, options)) {
+      return { ok: false, error: '锁 / 数据桥接目录本就不参与链接，无需加入不接管名单：' + value };
+    }
+  }
+  const registry = readHostsRegistry(options);
+  const existing = excludedEntryFor(registry, { agentId: kind === 'agent' ? value : null, dir: kind === 'dir' ? value : null });
+  if (existing) return { ok: true, entry: existing, registry, already: true };
+  const label = input && input.label
+    ? String(input.label).trim()
+    : kind === 'agent'
+      ? ((agentDirsLib.AGENT_DIRS[value] || {}).label || value)
+      : path.basename(value);
+  const entry = { kind, value, label, addedAt: nowIso() };
+  registry.excluded = (registry.excluded || []).concat([entry]);
+  writeHostsRegistry(options, registry);
+  return { ok: true, entry, registry };
+}
+
+/** 移出「不接管」名单（恢复接管）。 */
+function includeHost(opts, input) {
+  const options = opts || {};
+  const target = input && input.target ? String(input.target).trim() : '';
+  if (!target) return { ok: false, error: '缺少目标：hub hosts include <agentId|目录>' };
+  const { kind, value } = classifyExcludeTarget(target);
+  const registry = readHostsRegistry(options);
+  const index = (registry.excluded || []).findIndex((item) => item.kind === kind &&
+    (kind === 'agent' ? String(item.value).toLowerCase() === value : samePath(item.value, value)));
+  if (index < 0) return { ok: false, error: '未在不接管名单：' + target };
+  const removed = registry.excluded.splice(index, 1)[0];
+  writeHostsRegistry(options, registry);
+  return { ok: true, removed, registry };
+}
+
+/**
+ * 目录覆盖（0.29.1 U2）：用户级覆盖已收录 agentId 的内置映射目录；
+ * 被覆盖的旧目录不再进入默认发现 / 链接。
+ */
+function setHostOverride(opts, input) {
+  const options = opts || {};
+  const agentId = input && input.agentId ? String(input.agentId).trim().toLowerCase() : '';
+  if (!agentId) return { ok: false, error: '缺少 agentId：hub hosts set <agentId> --dir <目录>（恢复默认用 --clear）' };
+  const info = agentDirsLib.AGENT_DIRS[agentId];
+  if (!info) return { ok: false, error: '未收录智能体: ' + agentId };
+  if (info.neverLink) return { ok: false, error: 'YottaCode 不纳入元阁接管，不能设置目录覆盖。' };
+  const dir = input && input.dir ? path.resolve(input.dir) : null;
+  if (!dir) return { ok: false, error: '缺少目录：hub hosts set <agentId> --dir <目录>（恢复默认用 --clear）' };
+  const guard = validateHostDir(dir, options);
+  if (guard) return { ok: false, error: guard };
+  const label = input && input.label ? String(input.label).trim() : info.label;
+  const labelError = validateLabel(label);
+  if (labelError) return { ok: false, error: labelError };
+  const registry = readHostsRegistry(options);
+  const entry = {
+    agentId,
+    dir,
+    label,
+    previousDirs: (info.dirs || []).map((rel) => agentDirsLib.resolveUserDir(rel, options)),
+    addedAt: nowIso(),
+  };
+  const index = (registry.overrides || []).findIndex((item) => String(item.agentId).toLowerCase() === agentId);
+  if (index >= 0) registry.overrides[index] = entry;
+  else registry.overrides = (registry.overrides || []).concat([entry]);
+  writeHostsRegistry(options, registry);
+  return { ok: true, entry, registry };
+}
+
+/** 清除目录覆盖（恢复内置映射）。 */
+function clearHostOverride(opts, input) {
+  const options = opts || {};
+  const agentId = input && input.agentId ? String(input.agentId).trim().toLowerCase() : '';
+  if (!agentId) return { ok: false, error: '缺少 agentId：hub hosts set <agentId> --clear' };
+  const registry = readHostsRegistry(options);
+  const index = (registry.overrides || []).findIndex((item) => String(item.agentId).toLowerCase() === agentId);
+  if (index < 0) return { ok: false, error: '未找到目录覆盖：' + agentId };
+  const removed = registry.overrides.splice(index, 1)[0];
+  writeHostsRegistry(options, registry);
+  return { ok: true, removed, registry };
+}
+
 module.exports = {
   HOSTS_REGISTRY_VERSION,
   MANUAL_STATES,
@@ -194,4 +331,9 @@ module.exports = {
   addHost,
   removeHost,
   markHost,
+  excludedEntryFor,
+  excludeHost,
+  includeHost,
+  setHostOverride,
+  clearHostOverride,
 };

@@ -204,12 +204,17 @@ function hostsPayload(ctx) {
       brokenLinks: hostLinks.filter((link) => link.status !== 'ok').length,
     };
   });
+  const registry = hostsRegistryLib.readHostsRegistry({ homeDir: ctx.homeDir, env: ctx.env });
   return {
     generatedAt: found.generatedAt,
     hubDir: ctx.hubDir,
     standard: hubLib.STANDARD_ID,
     hosts,
     installed: found.installed,
+    // 0.29.1 U2：面板只渲染未配对标记（与 CLI hubHostLines 共用单一真源）。
+    unpaired: discoveryLib.unpairedMarkers(found),
+    excluded: registry.excluded || [],
+    overrides: registry.overrides || [],
     links,
     hubSkills,
     summary: {
@@ -219,6 +224,9 @@ function hostsPayload(ctx) {
       discovered: hosts.filter((host) => host.exists && !host.verified && !host.bridgeOnly).length,
       bridge: hosts.filter((host) => host.exists && host.bridgeOnly).length,
       installedMarks: found.installed.length,
+      unpairedMarks: discoveryLib.unpairedMarkers(found).length,
+      excluded: (registry.excluded || []).length,
+      overrides: (registry.overrides || []).length,
       links: links.length,
       brokenLinks: links.filter((link) => link.status !== 'ok').length,
       // 0.29.0 F3：宿主生命周期状态细分（面板分组 / 筛选）。
@@ -603,6 +611,70 @@ function writeHostPurge(ctx, body) {
   };
 }
 
+// ── 宿主标记 / 目录覆盖 / 不接管（0.29.1 U2；与 CLI 同源 hosts.json） ─────────
+function writeHostMark(ctx, body) {
+  const dir = String(body.dir || '').trim();
+  if (!dir) return { code: 400, payload: { error: '缺少目录。' } };
+  const state = String(body.state || '').trim().toLowerCase();
+  const result = hostsRegistryLib.markHost({ homeDir: ctx.homeDir, env: ctx.env }, { dir, state });
+  if (!result.ok) return { code: 400, payload: { error: result.error } };
+  auditViewHostEvent(ctx, { event: 'hosts.mark', dir: result.entry.dir, state, via: 'view' });
+  return { code: 200, payload: { action: 'hosts.mark', entry: result.entry } };
+}
+
+function writeHostSet(ctx, body) {
+  const agentId = String(body.agentId || '').trim().toLowerCase();
+  if (!agentId) return { code: 400, payload: { error: '缺少 agentId。' } };
+  const registryOpts = { homeDir: ctx.homeDir, env: ctx.env };
+  if (body.clear) {
+    const result = hostsRegistryLib.clearHostOverride(registryOpts, { agentId });
+    if (!result.ok) return { code: 400, payload: { error: result.error } };
+    auditViewHostEvent(ctx, { event: 'hosts.set', agentId, cleared: true, dir: result.removed.dir, via: 'view' });
+    return { code: 200, payload: { action: 'hosts.set', cleared: true, removed: result.removed } };
+  }
+  const dir = String(body.dir || '').trim();
+  const result = hostsRegistryLib.setHostOverride(registryOpts, { agentId, dir, label: body.label });
+  if (!result.ok) return { code: 400, payload: { error: result.error } };
+  auditViewHostEvent(ctx, {
+    event: 'hosts.set',
+    agentId,
+    dir: result.entry.dir,
+    label: result.entry.label,
+    via: 'view',
+  });
+  return { code: 200, payload: { action: 'hosts.set', entry: result.entry } };
+}
+
+function writeHostExclude(ctx, body) {
+  const target = String(body.target || '').trim();
+  if (!target) return { code: 400, payload: { error: '缺少 target（agentId 或目录）。' } };
+  const result = hostsRegistryLib.excludeHost({ homeDir: ctx.homeDir, env: ctx.env }, { target });
+  if (!result.ok) return { code: 400, payload: { error: result.error } };
+  auditViewHostEvent(ctx, {
+    event: 'hosts.exclude',
+    kind: result.entry.kind,
+    value: result.entry.value,
+    label: result.entry.label,
+    via: 'view',
+  });
+  return { code: 200, payload: { action: 'hosts.exclude', entry: result.entry, already: Boolean(result.already) } };
+}
+
+function writeHostInclude(ctx, body) {
+  const target = String(body.target || '').trim();
+  if (!target) return { code: 400, payload: { error: '缺少 target（agentId 或目录）。' } };
+  const result = hostsRegistryLib.includeHost({ homeDir: ctx.homeDir, env: ctx.env }, { target });
+  if (!result.ok) return { code: 400, payload: { error: result.error } };
+  auditViewHostEvent(ctx, {
+    event: 'hosts.include',
+    kind: result.removed.kind,
+    value: result.removed.value,
+    label: result.removed.label,
+    via: 'view',
+  });
+  return { code: 200, payload: { action: 'hosts.include', removed: result.removed } };
+}
+
 function json(res, code, value) {
   if (res.writableEnded) return;
   res.writeHead(code, {
@@ -764,6 +836,10 @@ function handlePost(ctx, pathname, req, res) {
       if (pathname === '/api/hosts/add') return writeHostAdd(ctx, body);
       if (pathname === '/api/hosts/remove') return writeHostRemove(ctx, body);
       if (pathname === '/api/hosts/purge') return writeHostPurge(ctx, body);
+      if (pathname === '/api/hosts/mark') return writeHostMark(ctx, body);
+      if (pathname === '/api/hosts/set') return writeHostSet(ctx, body);
+      if (pathname === '/api/hosts/exclude') return writeHostExclude(ctx, body);
+      if (pathname === '/api/hosts/include') return writeHostInclude(ctx, body);
       return { code: 404, payload: { error: 'not found' } };
     };
     ctx.queue(run)

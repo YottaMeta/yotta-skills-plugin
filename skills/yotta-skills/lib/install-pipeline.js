@@ -8,6 +8,7 @@ const lifecycleLib = require('./install-lifecycle');
 const healthLib = require('./install-health');
 const snapshotLib = require('./install-snapshot');
 const hookAdapterLib = require('./hook-adapter');
+const scanLib = require('./skills-scan');
 
 function nowTag() {
   return new Date().toISOString().replace(/[:.]/g, '-');
@@ -60,6 +61,15 @@ function restoreBackup(target, backup, hadTarget) {
   return false;
 }
 
+/** 0.29.1 U1「只升不降」跳过原因文案（equal / local-ahead / unknown）。 */
+function versionSkipNote(relation, installed, target) {
+  if (relation === 'equal') return '已是最新';
+  if (relation === 'local-ahead') {
+    return '本地领先 v' + installed + ' > 目标 v' + target + '，保留不降级（--force 可强制）';
+  }
+  return '无法比较版本（本地 v' + installed + ' / 目标 v' + target + '），保留（--force 可强制）';
+}
+
 function createInstaller(deps) {
   const homeDir = deps.homeDir || os.homedir();
   const runPhase = deps.runPhase || lifecycleLib.runPhase;
@@ -83,8 +93,18 @@ function createInstaller(deps) {
   return function installOne(skill, dest, opts) {
     const target = path.join(dest, skill.slug);
     const existingVersion = deps.readInstalledVersion(target);
-    if (!opts.force && existingVersion === skill.version) {
-      return { skill, status: 'skip', version: existingVersion, note: '已是最新', exitCode: 0 };
+    // 0.29.1 U1「只升不降」：pin 模式目标即最终版本，入口即可判定；
+    // range / latest 模式（目标非最终版本）在 npm pack 解析出精确版本后复判（见下方）。
+    const relation = scanLib.versionRelation(existingVersion, skill.version);
+    if (!opts.force && opts.pin !== false &&
+        (relation === 'equal' || relation === 'local-ahead' || relation === 'unknown')) {
+      return {
+        skill,
+        status: 'skip',
+        version: existingVersion,
+        note: versionSkipNote(relation, existingVersion, skill.version),
+        exitCode: 0,
+      };
     }
     if (opts.dryRun) {
       // 0.29.0 D1：只读预览 —— 不发网络请求、不写任何文件（含台账）。
@@ -122,6 +142,23 @@ function createInstaller(deps) {
       if (packed.error) {
         safeRecord({ event: 'before_install', skill: skill.slug, decision: 'fail', error: packed.error });
         return { skill, status: 'fail', version: null, note: packed.error, exitCode: 1 };
+      }
+
+      // 0.29.1 U1：解析出精确版本后、任何解压 / 快照 / 写入之前复判（latest / range 路径）。
+      const resolvedVersion = packed.resolved || (skill.version === 'latest' ? null : skill.version);
+      if (!opts.force && existingVersion) {
+        const resolvedRelation = resolvedVersion
+          ? scanLib.versionRelation(existingVersion, resolvedVersion)
+          : 'unknown';
+        if (resolvedRelation === 'equal' || resolvedRelation === 'local-ahead' || resolvedRelation === 'unknown') {
+          return {
+            skill,
+            status: 'skip',
+            version: existingVersion,
+            note: versionSkipNote(resolvedRelation, existingVersion, resolvedVersion || skill.version),
+            exitCode: 0,
+          };
+        }
       }
 
       const extractDir = path.join(tmp, 'extract');

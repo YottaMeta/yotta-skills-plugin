@@ -87,6 +87,36 @@ npx -y @yottameta/yotta-skills hub hosts remove ~/my-agent/skills --purge --yes
 注册表 = `<root>/hosts.json`（root = `YOTTA_SKILLS_HOME` 或 `~/.yottaskills`，schema v1，
 可 diff）；面板「宿主矩阵 → 添加自定义目录」等价可用，写操作需页面令牌与确认串。
 
+## 不接管与目录覆盖（0.29.1 起）
+
+**不接管**（excluded）：把某个智能体或目录从发现、显示、链接三层全部跳过
+（`--include-discovered` 也不纳入）；已建立的链接不受影响，可用 `hub unlink` 清理：
+
+```bash
+npx -y @yottameta/yotta-skills hub hosts exclude box                    # 按 agentId
+npx -y @yottameta/yotta-skills hub hosts exclude "D:\my-agent\skills"  # 按目录
+npx -y @yottameta/yotta-skills hub hosts include box                    # 恢复接管
+```
+
+**目录覆盖**（override）：用户级覆盖某个已收录 agentId 的内置映射目录
+（不改宿主配置；被覆盖的旧目录不再进入默认发现 / 链接）：
+
+```bash
+npx -y @yottameta/yotta-skills hub hosts set box --dir "D:\box-agent\skills"
+npx -y @yottameta/yotta-skills hub hosts set box --clear     # 恢复内置映射
+```
+
+面板「宿主矩阵」提供等价动作：行内「不接管 / 编辑目录 / 标记可用 / 忽略」，
+底部「不接管名单」区可「恢复接管」；写操作均写 Hub 审计。
+
+**YottaCode 不纳入接管**：YottaCode 自带三层技能管理（skill-inventory / skill /
+user-skills），元阁对其 `.yottacode` 路径与 `YOTTACODE_HOME` 子树在映射、扫描、
+注册、标记、链接全部 fail-closed 排除，避免重复管理。
+
+**未核实映射 ≠ 自动发现**：内置映射里尚未逐机核实的条目显示「映射·未核实」；
+「自动发现」只用于文件系统扫描结果。`installed` 配对按「用户注册 / 已核实映射 > env >
+未核实映射 > 自动发现」确定性优选（同级按技能数 + 路径稳定排序）。
+
 ## 命令
 
 ```bash

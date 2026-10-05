@@ -77,14 +77,17 @@
 
 - 读取目标 `<dest>/<slug>/SKILL.md` 的 frontmatter `version`；
 - 与清单 `version` 一致 → 跳过（幂等：第二次安装 27 个全部跳过）；
-- `--force` 强制重装；`update` 对「缺失 / 版本不一致」的技能重装。
+- **只升不降（0.29.1 起）**：本地版本高于目标（清单 pin / npm latest）→ 保留并标注「本地领先」，
+  `update` / `hub update` 跳过、`update --check` 不计更新（退出码 0）、`update --auto` 不动作；
+  `latest` / `--range` 目标在解析出精确版本后、任何写入之前复判；
+- `--force` 强制重装 / 显式降级；`rollback` 恢复快照；`update` 对「缺失 / 需要升级」的技能安装。
 
 ## 范围控制（接多少管多少）
 
 | 用法 | 范围 |
 |---|---|
 | `install`（无旗标） | 全量清单全部安装 |
-| `update`（无旗标） | 补齐缺失 + 升级已装（现状语义不变） |
+| `update`（无旗标） | 补齐缺失 + 升级已装（只升不降：本地更高保留不降级） |
 | `update --installed-only` | 只维护目标目录已安装的家族技能（不补装缺失；无匹配时退出码 0） |
 | `--only <a,b>` / `--domain <name>` | 只处理指定技能 / 家族；与 `--installed-only` 取交集 |
 | `update --check` / `--auto` | 只检查 / 维护已装技能，不补装缺失 |

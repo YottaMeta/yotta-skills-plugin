@@ -87,7 +87,9 @@ const AGENT_DIRS = {
   pochi:             { label: 'Pochi',                 dirs: ['.pochi/skills'] },
   adal:              { label: 'AdaL',                  dirs: ['.adal/skills'] },
   dsh:               { label: 'DSH / DeepSeek Harness', dirs: ['.dsh/skills'] },
-  yottacode:         { label: 'YottaCode',             dirs: ['.yottacode/skills'], verified: false },
+  // YottaCode 自带三层技能管理（skill-inventory / skill / user-skills），
+  // 不纳入元阁接管：neverLink 表示发现 / 显示 / 链接全部跳过（0.29.1 U2）。
+  yottacode:         { label: 'YottaCode',             dirs: ['.yottacode/skills'], verified: false, neverLink: true },
   box:               { label: 'Box Agent',             dirs: ['.box-agent/skills'], verified: false },
   lmstudio:          { label: 'LM Studio',             dirs: ['.lmstudio/skills'] },
   ccswitch:          { label: 'CC Switch',             dirs: ['.cc-switch/skills'] },
@@ -167,6 +169,14 @@ function resolveUserDir(rel, options) {
   return path.join(home, rel);
 }
 
+const YOTTACODE_PATH_RE = /(^|[\\/])\.yottacode([\\/]|$)/i;
+
+/** YottaCode 路径判定（不接管红线；发现 / 链接 / 注册 / 标记统一 fail-closed）。 */
+function isYottaCodeDir(dir) {
+  if (!dir) return false;
+  return YOTTACODE_PATH_RE.test(path.resolve(dir));
+}
+
 /** All known agent skill directories, including missing ones. */
 function knownRoots(options) {
   const roots = [];
@@ -179,8 +189,11 @@ function knownRoots(options) {
     roots.push({ dir: resolved, agentId, label, known: true, verified: verified !== false });
   };
   for (const [agentId, info] of Object.entries(AGENT_DIRS)) {
+    if (info.neverLink) continue;
     for (const rel of info.dirs) {
-      add(resolveUserDir(rel, options), agentId, info.label, info.verified !== false);
+      const dir = resolveUserDir(rel, options);
+      if (isYottaCodeDir(dir)) continue;
+      add(dir, agentId, info.label, info.verified !== false);
     }
   }
   return roots;
@@ -213,7 +226,7 @@ function envRoots(options) {
   add(envPath(env, 'DSH_AGENTS_HOME') && path.join(env.DSH_AGENTS_HOME, 'skills'), 'dsh', 'DSH Agents（DSH_AGENTS_HOME）');
   add(envPath(env, 'OPENCLAW_STATE_DIR') && path.join(env.OPENCLAW_STATE_DIR, 'skills'), 'openclaw', 'OpenClaw（OPENCLAW_STATE_DIR）');
   add(envPath(env, 'CLAUDE_CONFIG_DIR') && path.join(env.CLAUDE_CONFIG_DIR, 'skills'), 'claude', 'Claude Code（CLAUDE_CONFIG_DIR）');
-  add(envPath(env, 'YOTTACODE_HOME') && path.join(env.YOTTACODE_HOME, 'skills'), 'yottacode', 'YottaCode（YOTTACODE_HOME）');
+  // YOTTACODE_HOME 不纳入元阁接管（YottaCode 自带三层技能管理，0.29.1 U2）。
 
   const extra = String(env.YOTTA_SKILLS_DISCOVERY_ROOTS || '')
     .split(path.delimiter)
@@ -255,4 +268,5 @@ module.exports = {
   envRoots,
   bridgeOnlyDirs,
   isBridgeOnlyDir,
+  isYottaCodeDir,
 };
