@@ -13,6 +13,10 @@ const { spawnSync } = require('child_process');
 const depsLib = require('./deps');
 const gateLib = require('./verify-gate');
 const trustedVerifierLib = require('./trusted-verifier');
+const scanPolicyLib = require('./scan-policy');
+const hubLib = require('./hub');
+
+const POLICY_PATH = path.join(__dirname, '..', 'scan-policy.json');
 
 function currentCommand() {
   const args = process.argv.slice(2).map((a) => (/\s/.test(a) ? '"' + a + '"' : a));
@@ -52,6 +56,21 @@ function runScan(engine, skillDir, opts) {
   return gateLib.runVerifier(engine, skillDir, { python, spawnSync });
 }
 
+/**
+ * 复用安装管线的 scanPolicy 复核（0.29.2）：版本 + treeHash 绑定，fail-closed。
+ * 未命中例外表 / 绑定不匹配时返回原始 scan（不豁免任何发现）。
+ */
+function reviewScanWithPolicy(scan, context) {
+  const ctx = context || {};
+  const policy = scanPolicyLib.loadPolicy(ctx.policyPath || POLICY_PATH);
+  return scanPolicyLib.applyScanPolicy(scan, {
+    slug: ctx.slug,
+    version: ctx.version,
+    pkgDir: ctx.pkgDir,
+    policy,
+  });
+}
+
 /** Hub adopt scan engine: Hub itself first, then every discovered host dir. */
 function scanEngineForHub(hubDir, discovery, opts) {
   const direct = findVerifyEngine(hubDir, opts);
@@ -69,7 +88,7 @@ function scanEngineForHub(hubDir, discovery, opts) {
  * Scan one candidate directory for Hub adoption.
  * Returns { ok, verdict, counts, block } or { ok:false, error }.
  */
-function hubScanSkill(hubDir, discovery, opts, skillDir) {
+function hubScanSkill(hubDir, discovery, opts, skillDir, context) {
   const options = opts || {};
   if (options.skipScan) {
     return { ok: true, verdict: 'explicit-unverified', counts: null, block: false };
@@ -83,8 +102,22 @@ function hubScanSkill(hubDir, discovery, opts, skillDir) {
   }
   const scan = runScan(engine, skillDir, options);
   if (!scan.ok) return scan;
-  const verdict = gateLib.evaluateVerdict(scan.verdict);
-  return { ok: true, verdict: scan.verdict, counts: scan.counts, block: verdict.block };
+  const ctx = context || {};
+  const meta = hubLib.readSkillMeta(skillDir);
+  const reviewed = reviewScanWithPolicy(scan, {
+    slug: ctx.slug || (meta && (meta.slug || meta.name)) || null,
+    version: ctx.version || (meta && meta.version) || null,
+    pkgDir: skillDir,
+    policyPath: options.policyPath,
+  });
+  const verdict = gateLib.evaluateVerdict(reviewed.verdict);
+  return {
+    ok: true,
+    verdict: reviewed.verdict,
+    counts: reviewed.counts,
+    block: verdict.block,
+    policy: reviewed.policy || null,
+  };
 }
 
 module.exports = {
@@ -92,6 +125,7 @@ module.exports = {
   findVerifyEngine,
   findPython,
   runScan,
+  reviewScanWithPolicy,
   scanEngineForHub,
   hubScanSkill,
 };

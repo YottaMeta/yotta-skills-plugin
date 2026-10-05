@@ -204,11 +204,14 @@
       <div class="section panel">
         <h3>Hub 位置</h3>
         <div class="mono" id="ovHubDir">-</div>
+        <div class="faint" id="ovHubMeta"></div>
         <div class="toolbar section">
           <button class="btn small" data-goto="adopt">去收编</button>
           <button class="btn small" data-goto="links">去链接与体检</button>
           <button class="btn small" data-goto="records">查看记录</button>
           <button class="btn small" id="copyHubDir">复制路径</button>
+          <button class="btn small" id="hubConfigBtn">设置新位置</button>
+          <button class="btn small" id="hubConfigClearBtn" hidden>清除覆盖</button>
         </div>
       </div>
     </section>
@@ -483,7 +486,43 @@
     }).join('') : '<div class="empty">还没有动作记录。</div>';
     $('#ovHubDir').textContent = d.hubDir;
     $('#copyHubDir').onclick = function () { copyText(d.hubDir); };
+    var hubInfo = d.hub || {};
+    var sourceNames = { flag: '--hub 参数', env: 'YOTTA_SKILLS_HUB 环境变量', config: 'config.json 配置', default: '默认位置' };
+    var metaParts = ['来源: ' + (sourceNames[hubInfo.source] || hubInfo.source || '默认位置')];
+    if (hubInfo.configured) metaParts.push('配置覆盖: ' + hubInfo.configured);
+    if (hubInfo.restartRequired) metaParts.push('配置已指向 ' + (hubInfo.effectiveNow || '') + '，重启 view 后生效');
+    $('#ovHubMeta').textContent = metaParts.join(' · ');
+    $('#hubConfigClearBtn').hidden = !hubInfo.configured;
   }
+
+  $('#hubConfigBtn').onclick = function () {
+    var current = (state.overview && state.overview.hubDir) || '';
+    var body = '<p class="label">写入 config.json 持久覆盖（优先级低于 --hub 参数 / YOTTA_SKILLS_HUB）。不会自动迁移旧 Hub 内容；迁移用 CLI：yotta-skills hub config set --hub &lt;path&gt; --move。</p>' +
+      '<label class="label">新的 Hub 目录</label>' +
+      '<input id="hubNewPath" placeholder="D:\\my-hub" value="">' +
+      '<div class="note mono">当前: ' + esc(current) + '</div>';
+    openModal('设置 Hub 位置', body, {
+      okText: '写入配置',
+      onOk: async function () {
+        var value = ($('#hubNewPath').value || '').trim();
+        if (!value) { toast('先填写新的 Hub 目录'); return; }
+        var r = await api('/api/hub/config', { body: { hub: value, confirm: 'hub-config' } });
+        if (r.error) { toast(r.error); return; }
+        closeModal();
+        toast('已写入配置；重启 view 后生效');
+        loadOverview();
+      },
+    });
+  };
+  $('#hubConfigClearBtn').onclick = function () {
+    confirmModal('清除 Hub 位置覆盖？', '<p class="label">将删除 config.json 中的 Hub 覆盖，恢复 --hub &gt; 环境变量 &gt; 默认位置的解析。不会移动任何文件。</p>', '清除覆盖', true, async function () {
+      var r = await api('/api/hub/config', { body: { clear: true, confirm: 'hub-config' } });
+      if (r.error) { toast(r.error); return; }
+      closeModal();
+      toast('已清除覆盖；重启 view 后生效');
+      loadOverview();
+    });
+  };
 
   function renderOverviewSkills() {
     var d = state.overview;

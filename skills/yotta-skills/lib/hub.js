@@ -14,6 +14,7 @@ const os = require('os');
 const path = require('path');
 const scanLib = require('./skills-scan');
 const skillsCliLock = require('./skills-cli-lock');
+const skillsConfigLib = require('./skills-config');
 
 const STANDARD_ID = 'yotta-skills-hub/v1';
 const STATE_VERSION = 1;
@@ -45,11 +46,13 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+/** 解析生效 Hub（含来源）：--hub > YOTTA_SKILLS_HUB > config.json > 默认。 */
+function resolveHub(opts) {
+  return skillsConfigLib.resolveHub(opts);
+}
+
 function resolveHubDir(opts) {
-  const options = opts || {};
-  const explicit = options.hub || process.env.YOTTA_SKILLS_HUB;
-  if (explicit) return path.resolve(explicit);
-  return path.join(options.homeDir || os.homedir(), '.yottaskills', 'hub');
+  return resolveHub(opts).dir;
 }
 
 function hubPaths(hubDir) {
@@ -1498,6 +1501,7 @@ module.exports = {
   AUDIT_FILE,
   TRASH_RETENTION_DAYS,
   HUB_FAMILY_EXTRAS,
+  resolveHub,
   resolveHubDir,
   hubPaths,
   readHubState,

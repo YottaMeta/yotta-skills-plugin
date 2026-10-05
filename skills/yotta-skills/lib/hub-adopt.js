@@ -269,7 +269,7 @@ function refreshFrom(options) {
       updatedAt: new Date().toISOString(),
     });
     hubLib.appendAudit(hubDir, { event: 'refresh', slug, source, verdict: scan.verdict, backup });
-    return { ok: true, slug, source, backup, verdict: scan.verdict };
+    return { ok: true, slug, source, backup, verdict: scan.verdict, scanPolicy: scan.policy || null };
   } catch (error) {
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
     return { ok: false, slug, error: error.message };

@@ -194,12 +194,16 @@ function whereInfo(opts) {
   const options = opts || {};
   const running = safeRealpath(process.argv[1] || '');
   const registry = readSelfRegistry(options);
+  const hubResolved = hubLib.resolveHub(options);
   return {
     action: 'where',
     running,
     version: readPackageVersion(packageRoot()),
     defaultDir: defaultSelfDir(options),
-    hubDir: hubLib.resolveHubDir(options),
+    hubDir: hubResolved.dir,
+    hubSource: hubResolved.source,
+    hubConfigured: hubResolved.configured,
+    hubConfigFile: hubResolved.configFile,
     registry: selfRegistryPath(options),
     installs: registry.installs.map((item) => ({
       dir: item.dir,

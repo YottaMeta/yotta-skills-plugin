@@ -35,6 +35,7 @@ const usageLib = require('./usage-journal');
 const cliHelpLib = require('./cli-help');
 const hostsRegistryLib = require('./hosts-registry');
 const hostPurgeLib = require('./host-purge');
+const skillsConfigLib = require('./skills-config');
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 8789;
@@ -44,7 +45,7 @@ const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
 const TOKEN_HEADER = 'x-yotta-view-token';
 const TOKEN_PLACEHOLDER = '__YOTTA_VIEW_TOKEN__';
-const CONFIRM = { unlink: 'unlink', rollback: 'rollback', remove: 'remove', purge: 'purge' };
+const CONFIRM = { unlink: 'unlink', rollback: 'rollback', remove: 'remove', purge: 'purge', hubConfig: 'hub-config' };
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 function nowIso() {
@@ -164,9 +165,19 @@ function overviewPayload(ctx) {
     discovery: discovery(ctx),
   });
   const audit = readJsonlTail(hubAuditPath(ctx.hubDir), 8);
+  const hubNow = skillsConfigLib.resolveHub({ homeDir: ctx.homeDir, env: ctx.env });
   return {
     version: ctx.version,
     hubDir: ctx.hubDir,
+    // 0.29.2 U4：Hub 位置来源 / 配置覆盖 / 重启提示（面板「Hub 位置」区）。
+    hub: {
+      dir: ctx.hubDir,
+      source: ctx.hubSource || 'default',
+      configured: hubNow.configured,
+      configFile: hubNow.configFile,
+      effectiveNow: hubNow.dir,
+      restartRequired: !ctx.hubFlag && !sameDir(hubNow.dir, ctx.hubDir),
+    },
     standard: hubLib.STANDARD_ID,
     generatedAt: nowIso(),
     status: {
@@ -675,6 +686,46 @@ function writeHostInclude(ctx, body) {
   return { code: 200, payload: { action: 'hosts.include', removed: result.removed } };
 }
 
+/** 0.29.2 U4：面板「Hub 位置」设置 / 清除（写 config.json；重启 view 生效）。 */
+function writeHubConfig(ctx, body) {
+  if (String(body.confirm || '') !== CONFIRM.hubConfig) {
+    return { code: 400, payload: { error: '确认串不匹配（需要 "' + CONFIRM.hubConfig + '"）。' } };
+  }
+  const configOpts = { homeDir: ctx.homeDir, env: ctx.env };
+  const current = skillsConfigLib.resolveHub(configOpts);
+  if (body.clear) {
+    const result = skillsConfigLib.clearHub(configOpts);
+    if (!result.ok) return { code: 400, payload: { error: result.error } };
+    if (fs.existsSync(current.dir)) {
+      try {
+        hubLib.appendAudit(current.dir, { event: 'config.clear', removed: result.removed, via: 'view' });
+      } catch (_) { /* best-effort */ }
+    }
+    return { code: 200, payload: { action: 'config.clear', removed: result.removed, restartRequired: true } };
+  }
+  const hub = String(body.hub || '').trim();
+  const guard = skillsConfigLib.validateHubPath(hub, configOpts);
+  if (!guard.ok) return { code: 400, payload: { error: guard.error } };
+  const result = skillsConfigLib.setHub(configOpts, { hub });
+  if (!result.ok) return { code: 400, payload: { error: result.error } };
+  const auditDir = fs.existsSync(result.hub) ? result.hub : current.dir;
+  if (fs.existsSync(auditDir)) {
+    try {
+      hubLib.appendAudit(auditDir, { event: 'config.set', hub: result.hub, previousHub: current.dir, via: 'view' });
+    } catch (_) { /* best-effort */ }
+  }
+  return {
+    code: 200,
+    payload: {
+      action: 'config.set',
+      hub: result.hub,
+      previous: current.dir,
+      configFile: result.configFile,
+      restartRequired: true,
+    },
+  };
+}
+
 function json(res, code, value) {
   if (res.writableEnded) return;
   res.writeHead(code, {
@@ -840,6 +891,7 @@ function handlePost(ctx, pathname, req, res) {
       if (pathname === '/api/hosts/set') return writeHostSet(ctx, body);
       if (pathname === '/api/hosts/exclude') return writeHostExclude(ctx, body);
       if (pathname === '/api/hosts/include') return writeHostInclude(ctx, body);
+      if (pathname === '/api/hub/config') return writeHubConfig(ctx, body);
       return { code: 404, payload: { error: 'not found' } };
     };
     ctx.queue(run)
@@ -857,6 +909,8 @@ function createHubViewServer(options) {
   let chain = Promise.resolve();
   const ctx = {
     hubDir: path.resolve(opts.hubDir || hubLib.resolveHubDir({})),
+    hubSource: opts.hubSource || 'default',
+    hubFlag: Boolean(opts.hubFlag),
     homeDir: opts.homeDir || os.homedir(),
     env: opts.env || process.env,
     manifest: opts.manifest || [],

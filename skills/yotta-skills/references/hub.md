@@ -12,7 +12,24 @@ symlink），升级只改真源，已链接宿主即时生效。
 - 技能台账：`<hub>/.yotta-hub.json`
 - 链接台账：`<hub>/.yotta-links.json`
 - 收敛回收站：`~/.yottaskills/trash/<时间戳>/<宿主>/<技能>/`（保留 7 天，可用 `YOTTA_SKILLS_TRASH` 覆盖）
-- 覆盖方式：`--hub <dir>` 或 `YOTTA_SKILLS_HUB`
+- 覆盖方式（优先级）：`--hub <dir>` > `YOTTA_SKILLS_HUB` > `config.json`（`hub config set`）> 默认
+
+## Hub 位置持久化（0.29.2 起）
+
+`hub config` 把 Hub 位置写进用户级配置（与 hosts.json / self.json 同根）：
+
+```bash
+npx -y @yottameta/yotta-skills hub config get                # 生效位置 + 来源 + 配置文件
+npx -y @yottameta/yotta-skills hub config set --hub "D:\my-hub"        # 只换指针（旧 Hub 保留）
+npx -y @yottameta/yotta-skills hub config set --hub "D:\my-hub" --move # 迁移：复制校验 → 重链 → 旧 Hub 入回收站
+npx -y @yottameta/yotta-skills hub config clear              # 清除覆盖，回到 flag > env > 默认
+```
+
+- 配置文件：`<YOTTA_SKILLS_HOME>/config.json`（默认 `~/.yottaskills/config.json`；schema v1，原子写）。
+- 校验（fail-closed）：路径不能是文件、不能与配置根 / 独立安装目录重叠、不能是锁 / 数据桥接目录；路径不存在允许（首次使用时创建）。
+- `--move` 语义：旧 Hub 复制到新位置 → 逐技能 treeHash 校验 → 切换配置 → `hub link` 以新 Hub 为源 `--force` 重链 → 旧 Hub 入回收站（保留 7 天）。校验失败不切配置；重链未全部完成时旧 Hub 保留供重试（新旧内容一致，混合链接均可用）。
+- 面板「Hub 位置」区显示来源 / 配置覆盖 / 重启提示，并提供「设置新位置 / 清除覆盖」（写操作需页面令牌 + `hub-config` 确认串）；已在运行的 `view` 需重启后生效。
+- 误用防护：`--hub` 只允许与 `hub` / `view` / `where` 一起使用；其它命令（含裸 `--hub`）fail-closed 报错，不再静默忽略。
 
 ## 元技能唯一性收敛（`hub link` 执行时）
 
