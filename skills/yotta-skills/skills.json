@@ -40,9 +40,9 @@
       "slug": "yotta-learn",
       "name": "元习",
       "pkg": "@yottameta/yotta-learn",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "domain": "memory",
-      "desc": "学习沉淀 CLI：错误/纠正/洞见沉淀为 .learnings/ 条目"
+      "desc": "学习闭环 + 知识库 CLI：经验沉淀为 .learnings/ 条目；知识分类索引 + 关键词查询"
     },
     {
       "slug": "yotta-security-audit",

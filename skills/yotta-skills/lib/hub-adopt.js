@@ -29,6 +29,22 @@ function selectedVariant(variants) {
   })[0] || null;
 }
 
+/**
+ * 只读扫描用哈希：候选目录不可读（坏链 / 扫描途中被删除）时返回 ok:false，
+ * 不抛错——收编预演是只读操作，不应因单个候选异常整体失败。
+ */
+function safeHashTree(dir) {
+  try {
+    return { ok: true, hash: hubLib.hashTree(dir), error: null };
+  } catch (error) {
+    return {
+      ok: false,
+      hash: null,
+      error: error && error.message ? error.message : String(error),
+    };
+  }
+}
+
 function scanCandidates(options) {
   const opts = options || {};
   const hubDir = path.resolve(opts.hubDir);
@@ -36,10 +52,21 @@ function scanCandidates(options) {
   const existing = new Map(hubLib.scanHubSkills(hubDir).map((item) => [item.slug, item]));
   const family = hubLib.familySlugSet(opts.manifest);
   const groups = new Map();
+  const skipped = [];
 
   for (const host of discovery.hosts) {
     if (!host.exists) continue;
     for (const skill of scanLib.scanSkillDir(host.dir)) {
+      const hashed = safeHashTree(skill.source_dir);
+      if (!hashed.ok) {
+        skipped.push({
+          slug: skill.slug,
+          dir: skill.source_dir,
+          host: host.label,
+          reason: hashed.error,
+        });
+        continue;
+      }
       const variant = {
         slug: skill.slug,
         version: skill.version || '',
@@ -47,7 +74,7 @@ function scanCandidates(options) {
         dir: skill.source_dir,
         host: host.label,
         hostDir: host.dir,
-        treeHash: hubLib.hashTree(skill.source_dir),
+        treeHash: hashed.hash,
       };
       const group = groups.get(skill.slug);
       if (group) {
@@ -86,10 +113,12 @@ function scanCandidates(options) {
     generatedAt: new Date().toISOString(),
     hubDir,
     candidates,
+    skipped,
     summary: {
       candidates: candidates.length,
       conflicts: candidates.filter((item) => item.conflict).length,
       alreadyInHub: candidates.filter((item) => item.inHub).length,
+      skipped: skipped.length,
     },
   };
 }
@@ -278,6 +307,7 @@ function refreshFrom(options) {
 
 module.exports = {
   compareVersions,
+  safeHashTree,
   scanCandidates,
   applyCandidates,
   refreshFrom,
