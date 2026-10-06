@@ -72,6 +72,9 @@ function createPackRunner(deps) {
       timeout: 180000,
       maxBuffer: 64 * 1024 * 1024,
       shell: npm.shell,
+      // 0.29.5 S4：显式继承调用方环境（YOTTA_SKILLS_REGISTRY_FILE / YOTTA_SKILLS_MANIFEST /
+      // npm_config_* 等必须传到 npm / npx 子进程；此前依赖 spawnSync 默认继承，行为不变）。
+      env: process.env,
     });
 
     let result = attempt(baseArgs);

@@ -151,9 +151,14 @@ function replaceWithBackup(target, options) {
     return null;
   }
   if (!opts.force) throw new Error('目标已存在真目录；如需替换请显式加 --force');
-  const backup = target + '.yottaskills-backup-' + Date.now();
-  fs.renameSync(target, backup);
-  return backup;
+  // 0.29.5 S3：旧副本不再原地留 <name>.yottaskills-backup-*（宿主会当技能扫），
+  // 统一移入回收站（7 天可恢复）；跨卷走复制 + 校验 + 删源。
+  const trashRoot = opts.trashRoot || hubLib.resolveTrashRoot(opts.hubDir, opts);
+  const stamp = hubLib.trashRunStamp(opts.now);
+  const dest = path.join(trashRoot, stamp, 'hub-adopt', path.basename(target));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const transfer = hubLib.moveEntryAcrossDevices(target, dest, { renameEntry: opts.renameEntry });
+  return { path: dest, method: transfer.method, trashRoot };
 }
 
 function copyFidelity(sourceDir, targetDir) {
@@ -182,6 +187,9 @@ function applyCandidates(options) {
   const include = opts.include || [];
   const results = [];
   fs.mkdirSync(hubDir, { recursive: true });
+  try {
+    hubLib.pruneTrash(hubLib.resolveTrashRoot(hubDir, opts));
+  } catch (_) { /* best-effort */ }
 
   for (const candidate of candidates) {
     if (!includeMatch(candidate.slug, include)) continue;
@@ -220,8 +228,15 @@ function applyCandidates(options) {
     }
     let backup = null;
     let tmp = null;
+    let installed = false;
     try {
-      backup = replaceWithBackup(target, { force: opts.force });
+      backup = replaceWithBackup(target, {
+        force: opts.force,
+        hubDir,
+        env: opts.env,
+        trashRoot: opts.trashRoot,
+        renameEntry: opts.renameEntry,
+      });
       if (opts.inPlace) {
         hubLib.createDirLink(candidate.source, target);
       } else {
@@ -229,27 +244,44 @@ function applyCandidates(options) {
         fs.renameSync(tmp, target);
         tmp = null;
       }
+      installed = true;
       results.push({
         slug: candidate.slug,
         status: 'imported',
-        note: opts.inPlace ? '已原地登记并链接到 Hub' : '已复制到 Hub',
-        backup,
+        note: (opts.inPlace ? '已原地登记并链接到 Hub' : '已复制到 Hub') +
+          (backup ? '；旧副本已移入回收站（保留 ' + hubLib.TRASH_RETENTION_DAYS + ' 天）' : ''),
+        backup: backup ? backup.path : null,
         scanVerdict: scan.verdict,
         sourcePath: candidate.source,
         sourceAgent: candidate.sourceHost,
       });
-      hubLib.appendAudit(hubDir, {
-        event: 'adopt',
-        slug: candidate.slug,
-        source: candidate.source,
-        sourceHost: candidate.sourceHost,
-        inPlace: Boolean(opts.inPlace),
-        verdict: scan.verdict,
-        backup,
-      });
+      try {
+        hubLib.appendAudit(hubDir, {
+          event: 'adopt',
+          slug: candidate.slug,
+          source: candidate.source,
+          sourceHost: candidate.sourceHost,
+          inPlace: Boolean(opts.inPlace),
+          verdict: scan.verdict,
+          backup: backup ? backup.path : null,
+        });
+      } catch (_) { /* 审计失败不把已完成的收编判失败 */ }
     } catch (error) {
       if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
-      results.push({ slug: candidate.slug, status: 'error', note: error.message });
+      let restored = false;
+      if (backup && !installed) {
+        try {
+          hubLib.moveEntryAcrossDevices(backup.path, target, { renameEntry: opts.renameEntry });
+          restored = true;
+        } catch (_) { /* 保留回收站副本供人工恢复 */ }
+      }
+      results.push({
+        slug: candidate.slug,
+        status: 'error',
+        note: error.message +
+          (backup && !restored ? '（旧副本保留在回收站：' + backup.path + '）' : ''),
+        backup: backup && !restored ? backup.path : null,
+      });
     }
   }
   const synced = hubLib.syncHubState(hubDir, { manifest: opts.manifest, homeDir: opts.homeDir, env: opts.env });
@@ -286,23 +318,60 @@ function refreshFrom(options) {
   }
   let backup = null;
   let tmp = null;
+  let installed = false;
   try {
-    backup = replaceWithBackup(target, { force: true });
+    backup = replaceWithBackup(target, {
+      force: true,
+      hubDir,
+      env: opts.env,
+      trashRoot: opts.trashRoot,
+      renameEntry: opts.renameEntry,
+    });
     tmp = copyFidelity(source, target);
     fs.renameSync(tmp, target);
     tmp = null;
+    installed = true;
+  } catch (error) {
+    if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+    let restored = false;
+    if (backup && !installed) {
+      try {
+        hubLib.moveEntryAcrossDevices(backup.path, target, { renameEntry: opts.renameEntry });
+        restored = true;
+      } catch (_) { /* 保留回收站副本供人工恢复 */ }
+    }
+    return {
+      ok: false,
+      slug,
+      error: error.message + (backup && !restored ? '（旧副本保留在回收站：' + backup.path + '）' : ''),
+      backup: backup && !restored ? backup.path : null,
+    };
+  }
+  try {
     hubLib.syncHubState(hubDir, { manifest: opts.manifest, homeDir: opts.homeDir, env: opts.env });
     persistImportMeta(hubDir, slug, {
       sourcePath: source,
       scanVerdict: scan.verdict,
       updatedAt: new Date().toISOString(),
     });
-    hubLib.appendAudit(hubDir, { event: 'refresh', slug, source, verdict: scan.verdict, backup });
-    return { ok: true, slug, source, backup, verdict: scan.verdict, scanPolicy: scan.policy || null };
-  } catch (error) {
-    if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
-    return { ok: false, slug, error: error.message };
-  }
+  } catch (_) { /* 状态刷新 best-effort；链接 / 台账下次同步 */ }
+  try {
+    hubLib.appendAudit(hubDir, {
+      event: 'refresh',
+      slug,
+      source,
+      verdict: scan.verdict,
+      backup: backup ? backup.path : null,
+    });
+  } catch (_) { /* 审计失败不把已完成的刷新判失败 */ }
+  return {
+    ok: true,
+    slug,
+    source,
+    backup: backup ? backup.path : null,
+    verdict: scan.verdict,
+    scanPolicy: scan.policy || null,
+  };
 }
 
 module.exports = {

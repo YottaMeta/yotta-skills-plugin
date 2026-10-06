@@ -214,6 +214,15 @@
           <button class="btn small" id="hubConfigClearBtn" hidden>清除覆盖</button>
         </div>
       </div>
+      <div class="section" id="ovSwitchBanner" hidden></div>
+      <div class="section panel" id="ovMigration" hidden>
+        <h3>最近一次迁移</h3>
+        <div id="ovMigrationBody"></div>
+        <div class="toolbar section">
+          <button class="btn small danger" id="migrationRollbackBtn">回滚到原位置</button>
+          <button class="btn small" id="copyMigrationTrash">复制回收站路径</button>
+        </div>
+      </div>
     </section>
 
     <section class="view" id="view-hosts">
@@ -493,27 +502,198 @@
     if (hubInfo.restartRequired) metaParts.push('配置已指向 ' + (hubInfo.effectiveNow || '') + '，重启 view 后生效');
     $('#ovHubMeta').textContent = metaParts.join(' · ');
     $('#hubConfigClearBtn').hidden = !hubInfo.configured;
+    renderMigrationBlock(d);
   }
 
-  $('#hubConfigBtn').onclick = function () {
-    var current = (state.overview && state.overview.hubDir) || '';
-    var body = '<p class="label">写入 config.json 持久覆盖（优先级低于 --hub 参数 / YOTTA_SKILLS_HUB）。不会自动迁移旧 Hub 内容；迁移用 CLI：yotta-skills hub config set --hub &lt;path&gt; --move。</p>' +
+  /* 0.29.5 S1/S2：迁移向导（迁移 / 仅切换）+ 最近迁移 + 一键回滚（与 CLI 同内核） */
+  function renderMigrationBlock(d) {
+    var mig = (d.migration && d.migration.last) || null;
+    var pending = (d.migration && d.migration.switchPending) || null;
+    var banner = $('#ovSwitchBanner');
+    if (pending) {
+      banner.hidden = false;
+      banner.innerHTML = '<div class="banner danger"><svg class="sv" viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>' +
+        '<div><div class="banner-title">旧 Hub 还有 ' + esc(pending.skills) + ' 个技能未迁移</div>' +
+        '<div class="banner-body">旧位置 <span class="mono">' + esc(pending.from) + '</span> · 当前位置 <span class="mono">' + esc(d.hubDir) + '</span></div>' +
+        '<div class="toolbar section"><button class="btn small primary" id="switchMigrateNow">一键迁移到当前位置</button>' +
+        '<button class="btn small" id="switchMigrateOpen">迁移到其它位置…</button></div></div></div>';
+      $('#switchMigrateNow').onclick = function () {
+        confirmModal('迁移旧 Hub 到当前位置？',
+          '<p class="label">将把 <span class="mono">' + esc(pending.from) + '</span>（' + esc(pending.skills) + ' 个技能）复制到 <span class="mono">' + esc(d.hubDir) + '</span>，逐技能校验后切换配置、重链全部宿主，旧 Hub 入回收站（7 天可回滚）。</p>',
+          '开始迁移', false, async function () {
+            await executeHubMigration({ hub: d.hubDir, mode: 'move' }, { from: pending.from });
+          });
+      };
+      $('#switchMigrateOpen').onclick = function () { openHubConfigWizard(); };
+    } else {
+      banner.hidden = true;
+      banner.innerHTML = '';
+    }
+    var box = $('#ovMigration');
+    if (!mig) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    var kind = mig.kind === 'rollback' ? '回滚' : '迁移';
+    var lines = [
+      '最近一次' + kind + '：' + esc(mig.from) + ' → ' + esc(mig.to),
+      '时间 ' + esc(fmtTime(mig.at)) + ' · 技能 ' + esc(mig.verifiedSkills) + ' · 重链 ' + esc(mig.relinkDirs) + ' 个宿主目录',
+    ];
+    if (mig.trashedTo) lines.push('回收站 ' + esc(mig.trashedTo) + '（剩余 ' + esc(mig.daysLeft) + ' 天）');
+    if (mig.incomplete > 0) lines.push('⚠ 重链未全部完成（' + esc(mig.incomplete) + ' 项）；旧 Hub 保留在 ' + esc(mig.oldHubKept || mig.from));
+    if (mig.trashError) lines.push('⚠ 旧 Hub 移入回收站失败（已保留原位）：' + esc(mig.trashError));
+    $('#ovMigrationBody').innerHTML = '<div class="faint">' + lines.join('<br>') + '</div>';
+    $('#copyMigrationTrash').hidden = !mig.trashedTo;
+    $('#copyMigrationTrash').onclick = function () { copyText(mig.trashedTo); };
+    $('#migrationRollbackBtn').onclick = rollbackFlow;
+  }
+
+  function rewireModalButtons(opts) {
+    var ok = $('#modal').querySelector('[data-modal="ok"]');
+    var cancel = $('#modal').querySelector('[data-modal="cancel"]');
+    if (ok && opts.okText) { ok.textContent = opts.okText; ok.disabled = false; ok.onclick = opts.onOk || closeModal; }
+    if (ok && opts.hideOk) ok.hidden = true;
+    if (cancel && opts.cancelText) { cancel.textContent = opts.cancelText; cancel.onclick = opts.onCancel || closeModal; }
+  }
+
+  function showMigrationResult(result) {
+    var move = result.move || {};
+    var done = !move.incomplete && !move.trashError;
+    $('#modalBody').innerHTML =
+      '<div class="result"><span class="badge ' + (done ? 'ok' : 'danger') + '">' + (done ? '迁移完成' : '部分完成') + '</span><span>' + esc(result.previous || '') + ' → ' + esc(result.hub || '') + '</span></div>' +
+      '<div class="result"><span class="badge ok">校验</span><span>' + esc(move.verifiedSkills || 0) + ' 个技能复制校验通过</span></div>' +
+      '<div class="result"><span class="badge ok">重链</span><span>' + esc(move.relinkDirs || 0) + ' 个宿主目录</span></div>' +
+      (move.trashedTo ? '<div class="result"><span class="badge ok">旧 Hub</span><span class="mono">' + esc(move.trashedTo) + '</span><span>已入回收站（7 天可恢复）</span></div>' : '') +
+      (move.incomplete > 0 ? '<div class="result"><span class="badge danger">重链未全部完成</span><span>旧 Hub 保留在 <span class="mono">' + esc(move.oldHubKept || move.from || '') + '</span>；重跑：yotta-skills hub link --all --force</span></div>' : '') +
+      (move.trashError ? '<div class="result"><span class="badge warn">回收站</span><span>旧 Hub 移入回收站失败（已保留原位）：' + esc(move.trashError) + '</span></div>' : '') +
+      '<div class="note">新位置从下次面板加载开始生效（已在运行的 view 需重启）。</div>';
+    rewireModalButtons({
+      okText: '关闭',
+      onOk: closeModal,
+      cancelText: '刷新面板',
+      onCancel: function () { closeModal(); loadOverview(); },
+    });
+  }
+
+  function showSwitchResult(result) {
+    $('#modalBody').innerHTML =
+      '<div class="result"><span class="badge ok">已切换</span><span>' + esc(result.previous || '') + ' → ' + esc(result.hub || '') + '</span></div>' +
+      ((result.oldSkills || 0) > 0
+        ? '<div class="result"><span class="badge warn">未迁移</span><span>旧 Hub 还有 ' + esc(result.oldSkills) + ' 个技能未迁移；概览会持续提示，可一键迁移。</span></div>'
+        : '') +
+      '<div class="note">只切换了指针，没有移动任何文件；新位置从下次面板加载开始生效。</div>';
+    rewireModalButtons({
+      okText: '关闭',
+      onOk: closeModal,
+      cancelText: '刷新面板',
+      onCancel: function () { closeModal(); loadOverview(); },
+    });
+  }
+
+  async function executeHubMigration(body, opts) {
+    opts = opts || {};
+    var seq = showLoad(body.mode === 'switch' ? '正在切换 Hub 位置…' : '正在迁移 Hub（复制 → 校验 → 重链 → 回收站）…');
+    var payload = Object.assign({ confirm: 'hub-config' }, body);
+    if (opts.from) payload = Object.assign(payload, { from: opts.from });
+    var r = await api('/api/hub/config', { body: payload });
+    hideLoad(seq);
+    if (r.error) {
+      if (r.code === 'target-residue') return wizardResiduePrompt(body, r.error, opts);
+      if (opts.inModal) {
+        $('#hubWizardResult').innerHTML = '<div class="result"><span class="badge danger">失败</span><span>' + esc(r.error) + '</span></div>';
+      } else {
+        toast(r.error);
+      }
+      return null;
+    }
+    if (opts.inModal) {
+      if (body.mode === 'switch') showSwitchResult(r);
+      else showMigrationResult(r);
+    }
+    else {
+      closeModal();
+      toast('迁移完成：校验 ' + ((r.move && r.move.verifiedSkills) || 0) + ' 个技能 · 重链 ' + ((r.move && r.move.relinkDirs) || 0) + ' 个目录' + (r.move && r.move.incomplete ? '（重链未全部完成，见概览提示）' : ''));
+      loadOverview();
+    }
+    return r;
+  }
+
+  function wizardResiduePrompt(body, error, opts) {
+    var host = opts && opts.inModal ? $('#hubWizardResult') : $('#modalBody');
+    if (!host) { toast(error); return; }
+    host.innerHTML = '<div class="result"><span class="badge warn">残留</span><span>' + esc(error) + '</span></div>' +
+      '<button class="btn small primary" id="hubResidueClean">清理残留并迁移</button>';
+    $('#hubResidueClean').onclick = async function () {
+      var seq = showLoad('正在清理残留并迁移…');
+      var payload = Object.assign({ confirm: 'hub-config', cleanResidue: true }, body);
+      if (opts && opts.from) payload.from = opts.from;
+      var r = await api('/api/hub/config', { body: payload });
+      hideLoad(seq);
+      if (r.error) { toast(r.error); return; }
+      if (opts && opts.inModal) showMigrationResult(r);
+      else { closeModal(); toast('迁移完成'); loadOverview(); }
+    };
+  }
+
+  function openHubConfigWizard() {
+    var d = state.overview || {};
+    var current = d.hubDir || '';
+    var skillCount = (d.status && d.status.summary && d.status.summary.skills) || 0;
+    var body = '<p class="label">写入 config.json 持久覆盖（优先级低于 --hub 参数 / YOTTA_SKILLS_HUB）。</p>' +
       '<label class="label">新的 Hub 目录</label>' +
       '<input id="hubNewPath" placeholder="D:\\my-hub" value="">' +
-      '<div class="note mono">当前: ' + esc(current) + '</div>';
+      '<div class="note mono">当前: ' + esc(current) + '（' + esc(skillCount) + ' 个技能）</div>' +
+      '<div class="section"><label class="label"><input type="radio" name="hubMode" value="move" checked style="width:auto"> 迁移到新位置（推荐）</label>' +
+      '<div class="faint">复制 → 逐技能校验 → 切换配置 → 全宿主重链 → 旧 Hub 入回收站（7 天可回滚）。</div>' +
+      '<label class="label section"><input type="radio" name="hubMode" value="switch" style="width:auto"> 仅切换位置（保留旧内容）</label>' +
+      '<div class="faint">只改指针，不移动任何文件；旧 Hub 内容保留，概览会提示未迁移。</div></div>' +
+      '<div id="hubWizardResult" class="section"></div>';
     openModal('设置 Hub 位置', body, {
-      okText: '写入配置',
+      okText: '执行',
       onOk: async function () {
         var value = ($('#hubNewPath').value || '').trim();
         if (!value) { toast('先填写新的 Hub 目录'); return; }
-        var r = await api('/api/hub/config', { body: { hub: value, confirm: 'hub-config' } });
-        if (r.error) { toast(r.error); return; }
-        closeModal();
-        toast('已写入配置；重启 view 后生效');
-        loadOverview();
+        var mode = document.querySelector('input[name="hubMode"]:checked').value;
+        if (mode === 'switch' && skillCount > 0) {
+          $('#hubWizardResult').innerHTML = '<div class="result"><span class="badge warn">确认</span><span>旧 Hub 还有 ' + esc(skillCount) + ' 个技能未迁移。仅切换位置不会移动它们。</span></div>' +
+            '<button class="btn small danger" id="hubSwitchConfirm">确认仅切换</button>';
+          $('#hubSwitchConfirm').onclick = function () { executeHubMigration({ hub: value, mode: 'switch' }, { inModal: true }); };
+          return;
+        }
+        await executeHubMigration({ hub: value, mode: mode }, { inModal: true });
       },
     });
-  };
+  }
+
+  function rollbackFlow() {
+    api('/api/hub/config').then(function (d) {
+      if (d.error) { toast(d.error); return; }
+      var rb = d.rollback || {};
+      if (!rb.lastMigration) { toast('没有可回滚的迁移记录'); return; }
+      if (!rb.ok) {
+        confirmModal('回滚被阻断', '<p class="label">' + esc((rb.blocked || []).join('；') || rb.error || '') + '</p><div class="note">回滚 fail-closed（不合并）；处理阻断项后重试。</div>', null, true, null);
+        return;
+      }
+      confirmModal('回滚 Hub 位置？',
+        '<p class="label">将把当前 Hub 内容复制回原位置：<span class="mono">' + esc(rb.current) + '</span> → <span class="mono">' + esc(rb.target) + '</span>（复制校验 → 切换 → 重链 → 当前 Hub 入回收站 7 天）。</p>' +
+        '<div class="note">位置回退（用当前内容），不是恢复旧快照。</div>',
+        '执行回滚', true, async function () {
+          var seq = showLoad('正在回滚 Hub 位置（复制 → 校验 → 重链 → 回收站）…');
+          var r = await api('/api/hub/config', { body: { rollback: true, confirm: 'hub-config' } });
+          hideLoad(seq);
+          if (r.error) {
+            if (r.code === 'target-residue') { wizardResiduePrompt({ rollback: true }, r.error, {}); return; }
+            toast(r.error); return;
+          }
+          closeModal();
+          toast('回滚完成：' + ((r.move && r.move.verifiedSkills) || 0) + ' 个技能已回到 ' + (r.hub || ''));
+          loadOverview();
+        });
+    });
+  }
+
+  $('#hubConfigBtn').onclick = openHubConfigWizard;
   $('#hubConfigClearBtn').onclick = function () {
     confirmModal('清除 Hub 位置覆盖？', '<p class="label">将删除 config.json 中的 Hub 覆盖，恢复 --hub &gt; 环境变量 &gt; 默认位置的解析。不会移动任何文件。</p>', '清除覆盖', true, async function () {
       var r = await api('/api/hub/config', { body: { clear: true, confirm: 'hub-config' } });

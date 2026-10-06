@@ -36,6 +36,8 @@ const cliHelpLib = require('./cli-help');
 const hostsRegistryLib = require('./hosts-registry');
 const hostPurgeLib = require('./host-purge');
 const skillsConfigLib = require('./skills-config');
+const hubMigrateLib = require('./hub-migrate');
+const hubTargetsLib = require('./hub-targets');
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 8789;
@@ -149,6 +151,16 @@ function discovery(ctx) {
   return discoveryLib.discoverHosts({ homeDir: ctx.homeDir, env: ctx.env });
 }
 
+/** 迁移 / 回滚的重链范围（与 CLI hub link --all 同源，只取存在的目录）。 */
+function migrationTargets(ctx, excludeDirs) {
+  const skip = (excludeDirs || []).filter(Boolean);
+  return hubTargetsLib.computeHubTargets({
+    discovery: discovery(ctx),
+    homeDir: ctx.homeDir,
+    env: ctx.env,
+  }).filter((item) => fs.existsSync(item.dir) && !skip.some((dir) => sameDir(item.dir, dir)));
+}
+
 function scanEngineInfo(ctx, found) {
   const engine = hubScanLib.scanEngineForHub(ctx.hubDir, found, { python: ctx.python, verify: ctx.verify });
   if (!engine) return { available: false, path: null };
@@ -166,6 +178,22 @@ function overviewPayload(ctx) {
   });
   const audit = readJsonlTail(hubAuditPath(ctx.hubDir), 8);
   const hubNow = skillsConfigLib.resolveHub({ homeDir: ctx.homeDir, env: ctx.env });
+  const config = skillsConfigLib.readConfig({ homeDir: ctx.homeDir, env: ctx.env });
+  const lastMigration = config.lastMigration
+    ? { ...config.lastMigration, daysLeft: hubMigrateLib.trashDaysLeft(config.lastMigration.at) }
+    : null;
+  let switchPending = null;
+  if (config.lastSwitch && !sameDir(config.lastSwitch.from, ctx.hubDir)) {
+    const oldSkills = hubLib.countHubSkills(config.lastSwitch.from);
+    if (oldSkills > 0) {
+      switchPending = {
+        from: config.lastSwitch.from,
+        to: config.lastSwitch.to,
+        at: config.lastSwitch.at,
+        skills: oldSkills,
+      };
+    }
+  }
   return {
     version: ctx.version,
     hubDir: ctx.hubDir,
@@ -195,6 +223,47 @@ function overviewPayload(ctx) {
     },
     doctor: { ok: doctor.ok, summary: doctor.summary, checks: doctor.checks },
     audit: { count: audit.entries.length, recent: audit.entries, invalid: audit.invalid },
+    // 0.29.5 S1/S2：最近一次迁移 + 未迁移提示（面板迁移向导 / 一键回滚数据源）。
+    migration: {
+      last: lastMigration,
+      lastSwitch: config.lastSwitch,
+      switchPending,
+      trashRetentionDays: hubLib.TRASH_RETENTION_DAYS,
+    },
+  };
+}
+
+/** GET /api/hub/config：Hub 位置 + 最近迁移 + 回滚预览（只读）。 */
+function hubConfigPayload(ctx) {
+  const configOpts = { homeDir: ctx.homeDir, env: ctx.env };
+  const resolvedNow = skillsConfigLib.resolveHub(configOpts);
+  const resolved = ctx.hubFlag
+    ? {
+        dir: ctx.hubDir,
+        source: 'flag',
+        configured: resolvedNow.configured,
+        configFile: resolvedNow.configFile,
+        defaultDir: resolvedNow.defaultDir,
+      }
+    : resolvedNow;
+  const config = skillsConfigLib.readConfig(configOpts);
+  const rollback = hubMigrateLib.previewRollback({
+    configOpts,
+    env: ctx.env,
+    currentDir: ctx.hubFlag ? ctx.hubDir : null,
+  });
+  return {
+    hub: resolved.dir,
+    source: resolved.source,
+    configured: resolved.configured,
+    configFile: resolved.configFile,
+    defaultDir: resolved.defaultDir,
+    lastMigration: config.lastMigration
+      ? { ...config.lastMigration, daysLeft: hubMigrateLib.trashDaysLeft(config.lastMigration.at) }
+      : null,
+    lastSwitch: config.lastSwitch,
+    rollback,
+    trashRetentionDays: hubLib.TRASH_RETENTION_DAYS,
   };
 }
 
@@ -686,7 +755,12 @@ function writeHostInclude(ctx, body) {
   return { code: 200, payload: { action: 'hosts.include', removed: result.removed } };
 }
 
-/** 0.29.2 U4：面板「Hub 位置」设置 / 清除（写 config.json；重启 view 生效）。 */
+/**
+ * 0.29.2 U4：面板「Hub 位置」设置 / 清除；0.29.5 S1/S2 升级为迁移向导 + 一键回滚：
+ * - mode=move（默认）：复用 CLI `--move` 同一内核（复制校验 → 切配置 → 重链 → 回收站）。
+ * - mode=switch：仅切换指针；旧 Hub 有内容时记录 lastSwitch（面板横幅提示未迁移）。
+ * - body.rollback=true：一键回滚（位置回退，用当前内容；反向迁移同内核）。
+ */
 function writeHubConfig(ctx, body) {
   if (String(body.confirm || '') !== CONFIRM.hubConfig) {
     return { code: 400, payload: { error: '确认串不匹配（需要 "' + CONFIRM.hubConfig + '"）。' } };
@@ -703,24 +777,180 @@ function writeHubConfig(ctx, body) {
     }
     return { code: 200, payload: { action: 'config.clear', removed: result.removed, restartRequired: true } };
   }
+
+  if (body.rollback) return writeHubRollback(ctx, configOpts, body);
+
   const hub = String(body.hub || '').trim();
   const guard = skillsConfigLib.validateHubPath(hub, configOpts);
   if (!guard.ok) return { code: 400, payload: { error: guard.error } };
-  const result = skillsConfigLib.setHub(configOpts, { hub });
-  if (!result.ok) return { code: 400, payload: { error: result.error } };
-  const auditDir = fs.existsSync(result.hub) ? result.hub : current.dir;
+  const target = guard.dir;
+  const mode = body.mode === 'switch' ? 'switch' : 'move';
+  // 仅允许「迁移未迁移的旧 Hub → 当前位置」使用显式 from（必须命中 lastSwitch 记录），
+  // 不接受任意目录作为迁移源。
+  let migrationFrom = current.dir;
+  const fromOverride = String(body.from || '').trim();
+  if (mode === 'move' && fromOverride) {
+    const config = skillsConfigLib.readConfig(configOpts);
+    const pending = config.lastSwitch;
+    if (!pending || !sameDir(pending.from, fromOverride)) {
+      return {
+        code: 400,
+        payload: { error: 'from 只能指向面板记录的「未迁移旧 Hub」（' + (pending ? pending.from : '当前无记录') + '）。' },
+      };
+    }
+    migrationFrom = path.resolve(fromOverride);
+  }
+  if (mode === 'move' && sameDir(target, migrationFrom)) {
+    return { code: 400, payload: { error: '新旧 Hub 路径相同：' + target } };
+  }
+
+  if (mode === 'switch') {
+    if (sameDir(target, current.dir)) {
+      return { code: 400, payload: { error: '新旧 Hub 路径相同：' + target } };
+    }
+    const result = skillsConfigLib.setHub(configOpts, { hub: target });
+    if (!result.ok) return { code: 400, payload: { error: result.error } };
+    const oldSkills = hubLib.countHubSkills(current.dir);
+    if (oldSkills > 0) {
+      skillsConfigLib.recordLastSwitch(configOpts, {
+        from: current.dir,
+        to: target,
+        at: nowIso(),
+        skills: oldSkills,
+        via: 'view',
+      });
+    }
+    const auditDir = fs.existsSync(target) ? target : current.dir;
+    if (fs.existsSync(auditDir)) {
+      try {
+        hubLib.appendAudit(auditDir, {
+          event: 'config.set',
+          hub: target,
+          previousHub: current.dir,
+          moved: false,
+          via: 'view',
+        });
+      } catch (_) { /* best-effort */ }
+    }
+    return {
+      code: 200,
+      payload: {
+        action: 'config.set',
+        mode: 'switch',
+        hub: target,
+        previous: current.dir,
+        configFile: result.configFile,
+        oldSkills,
+        restartRequired: true,
+      },
+    };
+  }
+
+  const migration = hubMigrateLib.runHubMigration({
+    from: migrationFrom,
+    to: target,
+    targets: migrationTargets(ctx, [target, migrationFrom]),
+    manifest: ctx.manifest,
+    homeDir: ctx.homeDir,
+    env: ctx.env,
+    configOpts,
+    via: 'view',
+    cleanResidue: Boolean(body.cleanResidue),
+  });
+  if (!migration.ok && migration.phase !== 'relink') {
+    return {
+      code: migration.code === 'target-residue' ? 409 : 400,
+      payload: {
+        error: migration.error,
+        code: migration.code,
+        target: migration.target || null,
+      },
+    };
+  }
+  const auditDir = fs.existsSync(target) ? target : current.dir;
   if (fs.existsSync(auditDir)) {
     try {
-      hubLib.appendAudit(auditDir, { event: 'config.set', hub: result.hub, previousHub: current.dir, via: 'view' });
+      hubLib.appendAudit(auditDir, {
+        event: 'config.set',
+        hub: target,
+        previousHub: current.dir,
+        moved: true,
+        incomplete: migration.report.incomplete,
+        via: 'view',
+      });
     } catch (_) { /* best-effort */ }
   }
   return {
     code: 200,
     payload: {
       action: 'config.set',
-      hub: result.hub,
+      mode: 'move',
+      hub: target,
       previous: current.dir,
-      configFile: result.configFile,
+      configFile: skillsConfigLib.resolveHub(configOpts).configFile,
+      move: migration.report,
+      restartRequired: true,
+    },
+  };
+}
+
+/** 面板一键回滚：预览 → 反向迁移（位置回退，用当前内容；同内核）。 */
+function writeHubRollback(ctx, configOpts, body) {
+  const preview = hubMigrateLib.previewRollback({
+    configOpts,
+    env: ctx.env,
+    currentDir: ctx.hubFlag ? ctx.hubDir : null,
+  });
+  if (!preview.ok) {
+    return {
+      code: 400,
+      payload: {
+        error: preview.error || ('回滚被阻断：' + (preview.blocked || []).join('；')),
+        preview,
+      },
+    };
+  }
+  const migration = hubMigrateLib.runHubMigration({
+    from: preview.current,
+    to: preview.target,
+    kind: 'rollback',
+    targets: migrationTargets(ctx, [preview.current, preview.target]),
+    manifest: ctx.manifest,
+    homeDir: ctx.homeDir,
+    env: ctx.env,
+    configOpts,
+    via: 'view',
+    cleanResidue: Boolean(body.cleanResidue),
+  });
+  if (!migration.ok && migration.phase !== 'relink') {
+    return {
+      code: migration.code === 'target-residue' ? 409 : 400,
+      payload: {
+        error: migration.error,
+        code: migration.code,
+        target: migration.target || null,
+      },
+    };
+  }
+  const auditDir = fs.existsSync(preview.target) ? preview.target : preview.current;
+  if (fs.existsSync(auditDir)) {
+    try {
+      hubLib.appendAudit(auditDir, {
+        event: 'config.rollback',
+        hub: preview.target,
+        previousHub: preview.current,
+        incomplete: migration.report.incomplete,
+        via: 'view',
+      });
+    } catch (_) { /* best-effort */ }
+  }
+  return {
+    code: 200,
+    payload: {
+      action: 'config.rollback',
+      hub: preview.target,
+      previous: preview.current,
+      move: migration.report,
       restartRequired: true,
     },
   };
@@ -865,6 +1095,7 @@ function handleGet(ctx, pathname, url, res) {
   }
   if (pathname === '/api/records') return json(res, 200, recordsPayload(ctx, queryLimit(url)));
   if (pathname === '/api/rollback/list') return json(res, 200, rollbackListPayload(ctx, queryLimit(url)));
+  if (pathname === '/api/hub/config') return json(res, 200, hubConfigPayload(ctx));
   if (pathname === '/api/route') {
     const request = String(url.searchParams.get('request') || '').trim();
     if (!request) return json(res, 400, { error: '缺少 request 参数（需求摘要）。' });

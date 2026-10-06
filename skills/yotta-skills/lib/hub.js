@@ -394,6 +394,41 @@ function scanHubSkills(hubDir) {
   return result.sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
+/** 轻量技能计数（顶层目录 / 链接含 SKILL.md；不做哈希，用于提示与 doctor）。 */
+function countHubSkills(dir) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (_) {
+    return 0;
+  }
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    try {
+      if (fs.existsSync(path.join(dir, entry.name, SKILL_FILE))) count += 1;
+    } catch (_) { /* skip unreadable entry */ }
+  }
+  return count;
+}
+
+/** 空 Hub 提示：优先指向「未迁移旧 Hub」（0.29.5 S1），否则回退到 install / adopt。 */
+function emptyHubHint(opts, hubDir) {
+  const fallback = '先运行 yotta-skills hub install 或 hub adopt --apply';
+  try {
+    const config = skillsConfigLib.readConfig({ homeDir: opts.homeDir, env: opts.env });
+    if (config.lastSwitch && config.lastSwitch.from && !samePath(config.lastSwitch.from, hubDir)) {
+      const count = countHubSkills(config.lastSwitch.from);
+      if (count > 0) {
+        return '旧 Hub ' + config.lastSwitch.from + ' 还有 ' + count + ' 个技能未迁移；迁移：yotta-skills hub config set --hub "' +
+          path.resolve(hubDir) + '" --move（面板「一键迁移」同源）';
+      }
+    }
+  } catch (_) { /* fall back */ }
+  return fallback;
+}
+
 function manifestSlugs(manifest) {
   const set = new Set();
   const list = Array.isArray(manifest) ? manifest : (manifest && manifest.skills) || [];
@@ -457,6 +492,11 @@ function safeHostName(value) {
   return cleaned || 'host';
 }
 
+/** 目录短哈希（回收站命名去重：不同目录同 basename 时不互相撞车）。 */
+function shortPathHash(dir) {
+  return crypto.createHash('sha1').update(path.resolve(dir)).digest('hex').slice(0, 8);
+}
+
 /** 清理回收站中超过保留期的条目（best-effort；返回清理数量）。 */
 function pruneTrash(trashRoot, options) {
   const opts = options || {};
@@ -486,6 +526,77 @@ function pruneTrash(trashRoot, options) {
     }
   }
   return pruned;
+}
+
+/** 历史备份 / 暂存残留的目录名标记（0.29.5 S3）。 */
+const BACKUP_RESIDUE_MARKERS = [
+  '.yottaskills-backup-',
+  '.yottaskills-import-',
+  '.yottaskills-rollback-',
+  '.yottaskills-staging',
+];
+
+/**
+ * 扫描宿主 / Hub 目录里的 `.yottaskills-backup-*` / `.yottaskills-import-*`
+ * 历史残留（只读）。dirs = [{ dir, label }] 或字符串数组。
+ */
+function findBackupResidues(options) {
+  const opts = options || {};
+  const dirs = Array.isArray(opts.dirs) ? opts.dirs : [];
+  const found = [];
+  for (const item of dirs) {
+    const dir = path.resolve(typeof item === 'string' ? item : item.dir);
+    const label = typeof item === 'string' ? null : (item.label || null);
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_) {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!BACKUP_RESIDUE_MARKERS.some((marker) => entry.name.includes(marker))) continue;
+      found.push({
+        dir,
+        label,
+        name: entry.name,
+        path: path.join(dir, entry.name),
+      });
+    }
+  }
+  return found;
+}
+
+/**
+ * 清理历史备份残留：移入回收站 `backup-cleanup-<stamp>/`（保留 7 天）。
+ * options: { dirs, hubDir, trashRoot, residues, now, renameEntry }
+ */
+function cleanupBackupResidues(options) {
+  const opts = options || {};
+  const residues = Array.isArray(opts.residues) ? opts.residues : findBackupResidues(opts);
+  const baseHub = opts.hubDir || (opts.dirs && opts.dirs.length
+    ? (typeof opts.dirs[0] === 'string' ? opts.dirs[0] : opts.dirs[0].dir)
+    : null);
+  const trashRoot = opts.trashRoot || resolveTrashRoot(baseHub || process.cwd(), opts);
+  const stamp = trashRunStamp(opts.now);
+  const renameEntry = typeof opts.renameEntry === 'function' ? opts.renameEntry : fs.renameSync;
+  const moved = [];
+  const failed = [];
+  for (const item of residues) {
+    const dest = path.join(
+      trashRoot,
+      'backup-cleanup-' + stamp,
+      safeHostName(path.basename(item.dir)) + '-' + shortPathHash(item.dir),
+      item.name,
+    );
+    try {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      const transfer = moveEntryAcrossDevices(item.path, dest, { renameEntry });
+      moved.push({ from: item.path, to: dest, dir: item.dir, name: item.name, method: transfer.method });
+    } catch (error) {
+      failed.push({ path: item.path, error: error.message });
+    }
+  }
+  return { ok: failed.length === 0, trashRoot, found: residues.length, moved, failed };
 }
 
 /**
@@ -656,7 +767,7 @@ function linkSkills(options) {
   const makeLink = typeof opts.createLink === 'function' ? opts.createLink : createDirLink;
   const renameEntry = typeof opts.renameEntry === 'function' ? opts.renameEntry : fs.renameSync;
   const stamp = trashRunStamp(opts.now);
-  const hostName = safeHostName(opts.label || path.basename(targetDir));
+  const hostName = safeHostName(opts.label || path.basename(targetDir)) + '-' + shortPathHash(targetDir);
   let prunedTrash = 0;
   if (!dryRun) {
     try {
@@ -897,6 +1008,7 @@ function linkSkills(options) {
 
     // ── 非家族技能：保持原行为（同名冲突默认跳过，不自动删） ────────────
     let backup = null;
+    let backupMethod = null;
     if (current.kind === 'link' && current.inHub && current.targetExists !== false && samePath(current.target, skill.dir)) {
       results.push({ slug, status: 'linked', target, note: '已链接到 hub' });
       continue;
@@ -917,11 +1029,21 @@ function linkSkills(options) {
       }
       if (current.kind === 'directory') {
         if (dryRun) {
-          results.push({ slug, status: 'would-backup', target, note: '将备份真目录后建立链接' });
+          results.push({
+            slug,
+            status: 'would-backup',
+            target,
+            note: '将把真目录旧副本移入回收站（保留 ' + TRASH_RETENTION_DAYS + ' 天）后建立链接',
+          });
           continue;
         }
-        backup = target + '.yottaskills-backup-' + Date.now();
-        fs.renameSync(target, backup);
+        // 0.29.5 S3：旧副本不再原地留 <name>.yottaskills-backup-*（宿主会当技能扫），
+        // 统一移入回收站（7 天可恢复）；跨卷走复制 + 校验 + 删源。
+        const dest = path.join(trashRoot, stamp, hostName, slug);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        const transfer = moveEntryAcrossDevices(target, dest, { renameEntry });
+        backup = dest;
+        backupMethod = transfer.method;
       } else if (current.kind === 'link') {
         if (dryRun) {
           results.push({ slug, status: 'would-replace', target, note: '将替换已有链接' });
@@ -937,8 +1059,10 @@ function linkSkills(options) {
       results.push({ slug, status: 'would-link', target, note: '将建立链接' });
       continue;
     }
+    let linked = false;
     try {
       makeLink(skill.dir, target);
+      linked = true;
       const index = links.findIndex((item) => item.slug === slug && samePath(item.dir || '', targetDir));
       const record = {
         slug,
@@ -949,17 +1073,41 @@ function linkSkills(options) {
         hubDir: skill.dir,
         linkedAt: nowIso(),
         backup,
+        backupMethod,
       };
       if (index >= 0) links[index] = record;
       else links.push(record);
-      results.push({ slug, status: 'linked', target, note: backup ? '已备份原目录并建立链接' : '已建立链接', backup });
-      appendAudit(hubDir, { event: 'link', slug, target, hubDir: skill.dir, backup });
+      results.push({
+        slug,
+        status: 'linked',
+        target,
+        note: backup
+          ? '真目录旧副本已移入回收站（保留 ' + TRASH_RETENTION_DAYS + ' 天）并建立链接'
+          : '已建立链接',
+        backup,
+        backupMethod,
+        trashDir: backup ? trashRoot : null,
+      });
+      try {
+        appendAudit(hubDir, { event: 'link', slug, target, hubDir: skill.dir, backup, backupMethod });
+      } catch (_) { /* 审计失败不把已完成的链接判失败 */ }
     } catch (error) {
+      // 替换失败时把旧副本从回收站移回原位，避免宿主目录留下空位。
+      let restored = false;
+      if (backup && !linked) {
+        try {
+          moveEntryAcrossDevices(backup, target, { renameEntry });
+          restored = true;
+        } catch (_) { /* 保留回收站副本供人工恢复 */ }
+      }
       results.push({
         slug,
         status: 'error',
         target,
-        note: error.message + '（未静默降级为复制；请检查目录权限或改用 --dir 指定可写目录）',
+        backup: restored ? null : backup,
+        note: error.message +
+          (backup ? (restored ? '（旧副本已恢复原位）' : '（旧副本保留在回收站：' + backup + '）') : '') +
+          '（未静默降级为复制；请检查目录权限或改用 --dir 指定可写目录）',
       });
     }
   }
@@ -1395,6 +1543,38 @@ function singleSourceChecks(opts, add) {
   }
 }
 
+/** 0.29.5 S3：历史备份 / 暂存残留只读检查（宿主扫描目录 + Hub 自身）。 */
+function backupResidueChecks(opts, add) {
+  const hubDir = path.resolve(opts.hubDir);
+  const dirs = [];
+  if (fs.existsSync(hubDir)) dirs.push({ dir: hubDir, label: 'Hub' });
+  let discovery = opts.discovery;
+  if (!discovery) {
+    try {
+      discovery = require('./agent-discovery').discoverHosts({ homeDir: opts.homeDir, env: opts.env });
+    } catch (_) {
+      discovery = { hosts: [] };
+    }
+  }
+  for (const host of discovery.hosts || []) {
+    if (!host || !host.exists || !host.dir) continue;
+    dirs.push({ dir: host.dir, label: host.label || host.agentId || host.dir });
+  }
+  const residues = findBackupResidues({ dirs });
+  if (residues.length === 0) return;
+  const byDir = new Map();
+  for (const item of residues) {
+    if (!byDir.has(item.dir)) byDir.set(item.dir, []);
+    byDir.get(item.dir).push(item.name);
+  }
+  for (const [dir, names] of byDir) {
+    add('backup_residue:' + dir, false, 'warning',
+      '发现 ' + names.length + ' 个历史备份 / 暂存残留（宿主会把备份当技能扫描）: ' + names.slice(0, 5).join('、') +
+        (names.length > 5 ? ' 等 ' + names.length + ' 项' : ''),
+      '清理：yotta-skills hub cleanup-backups --yes（移入回收站，保留 ' + TRASH_RETENTION_DAYS + ' 天）');
+  }
+}
+
 function doctor(options) {
   const opts = options || {};
   const hubDir = path.resolve(opts.hubDir);
@@ -1405,7 +1585,7 @@ function doctor(options) {
 
   add('hub_dir', fs.existsSync(hubDir), 'error',
     fs.existsSync(hubDir) ? 'Hub 目录存在' : 'Hub 目录不存在',
-    fs.existsSync(hubDir) ? null : '先运行 yotta-skills hub install 或 hub adopt --apply');
+    fs.existsSync(hubDir) ? null : emptyHubHint(opts, hubDir));
   if (fs.existsSync(hubDir)) {
     try {
       fs.accessSync(hubDir, fs.constants.W_OK);
@@ -1423,7 +1603,7 @@ function doctor(options) {
   const stateSkills = Object.values(synced.state.skills || {});
   if (fs.existsSync(hubDir) && stateSkills.length === 0) {
     add('hub_nonempty', false, 'error', 'Hub 目录存在但没有任何技能',
-      '先运行 yotta-skills hub install 或 hub adopt --apply');
+      emptyHubHint(opts, hubDir));
   }
   for (const skill of stateSkills) {
     add('skill_present:' + skill.slug, skill.status === 'present', 'error',
@@ -1462,6 +1642,9 @@ function doctor(options) {
 
   try {
     singleSourceChecks(opts, add);
+  } catch (_) { /* 只读检查失败不影响 doctor 主流程 */ }
+  try {
+    backupResidueChecks(opts, add);
   } catch (_) { /* 只读检查失败不影响 doctor 主流程 */ }
 
   // F3（0.29.0）：宿主状态细分只读检查 —— 残留 / 仅标记给 info 提示，不 fail。
@@ -1512,12 +1695,18 @@ module.exports = {
   hashTree,
   moveEntryAcrossDevices,
   scanHubSkills,
+  countHubSkills,
   syncHubState,
   familySlugSet,
   compareVersions,
   readSkillMeta,
   resolveTrashRoot,
   pruneTrash,
+  BACKUP_RESIDUE_MARKERS,
+  findBackupResidues,
+  cleanupBackupResidues,
+  trashRunStamp,
+  safeHostName,
   listFamilyCopies,
   createDirLink,
   removeDirLink,

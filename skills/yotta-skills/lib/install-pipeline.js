@@ -61,6 +61,39 @@ function restoreBackup(target, backup, hadTarget) {
   return false;
 }
 
+/** 暂存子目录超过 1 小时视为崩溃残留（并发安装的暂存目录总是新鲜的）。 */
+const STAGING_STALE_MS = 60 * 60 * 1000;
+
+/** 清理目标目录 `.yottaskills-staging` 中的陈旧暂存（best-effort，返回清理数）。 */
+function pruneStaleStaging(stagingRoot, options) {
+  const opts = options || {};
+  const now = opts.now instanceof Date ? opts.now.getTime() : Date.now();
+  let entries;
+  try {
+    entries = fs.readdirSync(stagingRoot, { withFileTypes: true });
+  } catch (_) {
+    return 0;
+  }
+  let pruned = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const full = path.join(stagingRoot, entry.name);
+    let stat;
+    try {
+      stat = fs.statSync(full);
+    } catch (_) {
+      continue;
+    }
+    if (now - stat.mtimeMs > STAGING_STALE_MS) {
+      try {
+        fs.rmSync(full, { recursive: true, force: true });
+        pruned += 1;
+      } catch (_) { /* 保留供下次清理 */ }
+    }
+  }
+  return pruned;
+}
+
 /** 0.29.1 U1「只升不降」跳过原因文案（equal / local-ahead / unknown）。 */
 function versionSkipNote(relation, installed, target) {
   if (relation === 'equal') return '已是最新';
@@ -128,6 +161,7 @@ function createInstaller(deps) {
 
     let tmp = null;
     let staged = null;
+    let stagingRoot = null;
     let snapshot = null;
     let backup = null;
     const hadTarget = fs.existsSync(target);
@@ -274,14 +308,24 @@ function createInstaller(deps) {
       }
 
       fs.mkdirSync(dest, { recursive: true });
-      const stagingRoot = path.join(dest, '.yottaskills-staging');
+      stagingRoot = path.join(dest, '.yottaskills-staging');
       fs.mkdirSync(stagingRoot, { recursive: true });
+      pruneStaleStaging(stagingRoot);
       staged = fs.mkdtempSync(path.join(stagingRoot, skill.slug + '-'));
       // Hub installs keep declared runtime payload (e.g. yotta-skills bin):
       // hosts linked to the Hub then inherit the runtime files (OpenCode contract).
-      const runtimePayload = (opts.hubScope && Array.isArray(resolvedSkill.runtimePayload))
-        ? resolvedSkill.runtimePayload
-        : [];
+      // 0.29.5 S4：`--dir` 托管目录更新保持既有运行时载荷（目标已带 bin/ 等 → 继续携带），
+      // 防更新后引擎缺 bin；新装 / 普通技能目录仍只落本体（§6.3 口径不变）。
+      let runtimePayload = [];
+      if (Array.isArray(resolvedSkill.runtimePayload) && resolvedSkill.runtimePayload.length > 0) {
+        if (opts.hubScope) {
+          runtimePayload = resolvedSkill.runtimePayload;
+        } else if (hadTarget) {
+          const carriesPayload = resolvedSkill.runtimePayload
+            .some((name) => fs.existsSync(path.join(target, name)));
+          if (carriesPayload) runtimePayload = resolvedSkill.runtimePayload;
+        }
+      }
       const copyWithRuntime = (src, dst) => deps.copyDir(src, dst, { keep: runtimePayload });
       copyTree(extracted.pkgDir, staged, copyWithRuntime);
 
@@ -454,8 +498,12 @@ function createInstaller(deps) {
     } finally {
       if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
       if (staged) fs.rmSync(staged, { recursive: true, force: true });
+      if (stagingRoot) {
+        // 结束（含失败）强制清理：目录为空时删除；并发安装留下的新鲜暂存则保留。
+        try { fs.rmdirSync(stagingRoot); } catch (_) { /* 非空 / 并发占用，保留 */ }
+      }
     }
   };
 }
 
-module.exports = { createInstaller, renameWithRetry, isSafeTarEntry };
+module.exports = { createInstaller, renameWithRetry, isSafeTarEntry, pruneStaleStaging, STAGING_STALE_MS };

@@ -14,7 +14,7 @@ symlink），升级只改真源，已链接宿主即时生效。
 - 收敛回收站：`~/.yottaskills/trash/<时间戳>/<宿主>/<技能>/`（保留 7 天，可用 `YOTTA_SKILLS_TRASH` 覆盖）
 - 覆盖方式（优先级）：`--hub <dir>` > `YOTTA_SKILLS_HUB` > `config.json`（`hub config set`）> 默认
 
-## Hub 位置持久化（0.29.2 起）
+## Hub 位置持久化（0.29.2 起；0.29.5 迁移向导 / 回滚 / 残留清理）
 
 `hub config` 把 Hub 位置写进用户级配置（与 hosts.json / self.json 同根）：
 
@@ -22,14 +22,32 @@ symlink），升级只改真源，已链接宿主即时生效。
 npx -y @yottameta/yotta-skills hub config get                # 生效位置 + 来源 + 配置文件
 npx -y @yottameta/yotta-skills hub config set --hub "D:\my-hub"        # 只换指针（旧 Hub 保留）
 npx -y @yottameta/yotta-skills hub config set --hub "D:\my-hub" --move # 迁移：复制校验 → 重链 → 旧 Hub 入回收站
+npx -y @yottameta/yotta-skills hub config rollback           # 回滚预览（上次迁移前的原位置）
+npx -y @yottameta/yotta-skills hub config rollback --yes     # 执行回滚（位置回退，用当前内容）
 npx -y @yottameta/yotta-skills hub config clear              # 清除覆盖，回到 flag > env > 默认
 ```
 
 - 配置文件：`<YOTTA_SKILLS_HOME>/config.json`（默认 `~/.yottaskills/config.json`；schema v1，原子写）。
 - 校验（fail-closed）：路径不能是文件、不能与配置根 / 独立安装目录重叠、不能是锁 / 数据桥接目录；路径不存在允许（首次使用时创建）。
 - `--move` 语义：旧 Hub 复制到新位置 → 逐技能 treeHash 校验 → 切换配置 → `hub link` 以新 Hub 为源 `--force` 重链 → 旧 Hub 入回收站（保留 7 天）。校验失败不切配置；重链未全部完成时旧 Hub 保留供重试（新旧内容一致，混合链接均可用）。
-- 面板「Hub 位置」区显示来源 / 配置覆盖 / 重启提示，并提供「设置新位置 / 清除覆盖」（写操作需页面令牌 + `hub-config` 确认串）；已在运行的 `view` 需重启后生效。
+- 目标目录只含元阁自己的空台账残留（`.yotta-hub.json` / `.yotta-hub-audit.jsonl`）时，`--move` 默认 fail-closed 并提示；确认后加 `--clean-residue`（残留移入回收站）再迁移。
+- 迁移记录：`config.json` 的 `lastMigration` 记录时间 / from→to / 校验技能数 / 重链目录数 / 回收站与剩余天数；`hub config get` 展示「最近一次迁移」块与回滚命令。
+- 回滚语义：`hub config rollback` 默认预览、`--yes` 执行 = 位置回退（把当前 Hub 内容复制校验回原位置，再重链、当前 Hub 入回收站 7 天）；**不是**恢复旧快照。目标非空 fail-closed（不合并）。
+- 仅切换指针（不带 `--move`）时，若旧 Hub 非空会记录「未迁移」并在面板提示「旧 Hub 还有 N 个技能未迁移」+ 一键迁移；执行迁移 / 回滚后该提示自动清除。
+- 面板「Hub 位置」区显示来源 / 配置覆盖 / 重启提示，并提供「设置新位置（迁移向导：迁移 / 仅切换，默认迁移）/ 最近一次迁移 + 一键回滚 / 清除覆盖」（写操作需页面令牌 + `hub-config` 确认串）；已在运行的 `view` 需重启后生效。
 - 误用防护：`--hub` 只允许与 `hub` / `view` / `where` 一起使用；其它命令（含裸 `--hub`）fail-closed 报错，不再静默忽略。
+
+## 备份 / 暂存残留清理（0.29.5 起）
+
+`hub link --force` 替换真目录时，旧副本移入回收站（不再原地留 `<name>.yottaskills-backup-*`，宿主不会把备份当技能扫描）。历史残留可用：
+
+```bash
+npx -y @yottameta/yotta-skills hub cleanup-backups          # 预览（Hub + 已核实宿主）
+npx -y @yottameta/yotta-skills hub cleanup-backups --yes    # 移入回收站（7 天可恢复）
+```
+
+- 识别标记：`.yottaskills-backup-*` / `.yottaskills-import-*` / `.yottaskills-rollback-*` / `.yottaskills-staging`。
+- `hub doctor` 会只读报告 `backup_residue:*` 警告并给出清理命令；`--dir` / `--agent` 可收窄范围。
 
 ## 元技能唯一性收敛（`hub link` 执行时）
 
@@ -160,7 +178,7 @@ npx -y @yottameta/yotta-skills hub adopt --apply
 npx -y @yottameta/yotta-skills hub refresh my-skill --from <技能目录>
 
 # 分发到全部已核实宿主（默认范围）：元技能链接时收敛旧副本（回收站 7 天）；
-# 外部技能同名真目录默认跳过（--force 才备份并替换）
+# 外部技能同名真目录默认跳过（--force 才把旧副本移入回收站并替换）
 npx -y @yottameta/yotta-skills hub link --all
 
 # 显式把自动发现目录一并纳入（桥接目录永不链接）
@@ -240,7 +258,8 @@ install / update / refresh 只在高级 CLI 页给出可复制命令，不在网
 ## 安全边界
 
 - `unlink` 只删除 lstat 确认为链接、且 readlink 目标位于 Hub 内的路径。
-- 真目录 / 非 Hub 链接一律拒绝删除；`--force` 对真目录先备份再替换。
+- 真目录 / 非 Hub 链接一律拒绝删除；`--force` 对真目录把旧副本移入回收站（7 天）再替换；
+  替换失败会把旧副本移回原位（回收站路径随结果输出）。
 - `remove` 只删指向 Hub 的链接与 Hub 内目录；链接清理报错即中止、不删 Hub；
   Hub 目录入回收站保留 7 天，可恢复。
 - 收敛只动元技能在宿主目录中的旧副本：移入回收站（7 天）而非直删；

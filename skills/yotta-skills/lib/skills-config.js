@@ -1,9 +1,15 @@
 'use strict';
 /**
- * 用户级配置（0.29.2 U4）—— <root>/config.json。
+ * 用户级配置（0.29.2 U4；0.29.5 扩展 lastMigration / lastSwitch）—— <root>/config.json。
  *
  * root = YOTTA_SKILLS_HOME 或 ~/.yottaskills（与 hosts.json / self.json 同根，
- * 独立于 Hub 目录本身）。schema v1：{ version, hub: "<path>" | null }。
+ * 独立于 Hub 目录本身）。schema v1（向后兼容增量）：
+ *   { version, hub: "<path>" | null, lastMigration?: {...}, lastSwitch?: {...} }
+ *
+ * - lastMigration：最近一次成功切换位置的真实迁移（含回滚；from→to + 校验技能数 +
+ *   重链目录数 + 回收站路径），供 `hub config get` / 面板「最近一次迁移 + 一键回滚」。
+ * - lastSwitch：仅切换指针（未迁移）时记录的原位置，供面板提示
+ *   「旧 Hub 还有 N 个技能未迁移」。
  *
  * Hub 解析优先级：--hub flag > YOTTA_SKILLS_HUB env > config.hub > 默认 <root>/hub。
  * set 为 fail-closed 校验：不能是文件、不能与配置根 / 独立安装目录重叠、
@@ -39,20 +45,72 @@ function readConfig(opts) {
       return {
         version: CONFIG_VERSION,
         hub: typeof value.hub === 'string' && value.hub.trim() ? value.hub : null,
+        lastMigration: sanitizeMigration(value.lastMigration),
+        lastSwitch: sanitizeSwitch(value.lastSwitch),
       };
     }
   } catch (_) { /* missing or corrupt config falls back to empty */ }
-  return { version: CONFIG_VERSION, hub: null };
+  return { version: CONFIG_VERSION, hub: null, lastMigration: null, lastSwitch: null };
+}
+
+function cleanString(value) {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function cleanCount(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && num >= 0 ? num : 0;
+}
+
+/** 规范化 lastMigration（非法条目按缺失处理，绝不抛错）。 */
+function sanitizeMigration(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const from = cleanString(value.from);
+  const to = cleanString(value.to);
+  if (!from || !to) return null;
+  return {
+    kind: value.kind === 'rollback' ? 'rollback' : 'migrate',
+    from,
+    to,
+    at: cleanString(value.at),
+    verifiedSkills: cleanCount(value.verifiedSkills),
+    relinkDirs: cleanCount(value.relinkDirs),
+    incomplete: cleanCount(value.incomplete),
+    trashedTo: cleanString(value.trashedTo),
+    trashError: cleanString(value.trashError),
+    oldHubKept: cleanString(value.oldHubKept),
+    via: cleanString(value.via),
+  };
+}
+
+/** 规范化 lastSwitch（仅切换指针的记录）。 */
+function sanitizeSwitch(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const from = cleanString(value.from);
+  const to = cleanString(value.to);
+  if (!from || !to) return null;
+  return {
+    from,
+    to,
+    at: cleanString(value.at),
+    skills: cleanCount(value.skills),
+    via: cleanString(value.via),
+  };
 }
 
 function writeConfig(opts, config) {
   const file = configPath(opts);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = file + '.tmp-' + process.pid;
-  fs.writeFileSync(tmp, JSON.stringify({
+  const payload = {
     version: CONFIG_VERSION,
     hub: config && config.hub ? config.hub : null,
-  }, null, 2) + '\n', 'utf8');
+  };
+  const migration = sanitizeMigration(config && config.lastMigration);
+  const switched = sanitizeSwitch(config && config.lastSwitch);
+  if (migration) payload.lastMigration = migration;
+  if (switched) payload.lastSwitch = switched;
+  fs.writeFileSync(tmp, JSON.stringify(payload, null, 2) + '\n', 'utf8');
   fs.renameSync(tmp, file);
   return file;
 }
@@ -155,6 +213,39 @@ function clearHub(opts) {
   return { ok: true, removed, configFile: file };
 }
 
+/**
+ * 记录最近一次迁移（真实移动；kind=migrate / rollback）。
+ * 迁移完成即清除 lastSwitch（原位置内容已处理，不再提示）。
+ */
+function recordLastMigration(opts, migration) {
+  const options = opts || {};
+  const config = readConfig(options);
+  config.lastMigration = sanitizeMigration(migration);
+  config.lastSwitch = null;
+  const file = writeConfig(options, config);
+  return { ok: true, lastMigration: readConfig(options).lastMigration, configFile: file };
+}
+
+/** 记录「仅切换位置」（未迁移）：原位置留给面板提示「未迁移」。 */
+function recordLastSwitch(opts, info) {
+  const options = opts || {};
+  const config = readConfig(options);
+  config.lastSwitch = sanitizeSwitch(info);
+  const file = writeConfig(options, config);
+  return { ok: true, lastSwitch: readConfig(options).lastSwitch, configFile: file };
+}
+
+/** 清除「未迁移」提示（原位置已空 / 已迁移 / 用户处理）。 */
+function clearLastSwitch(opts) {
+  const options = opts || {};
+  const config = readConfig(options);
+  if (!config.lastSwitch) return { ok: false, cleared: null };
+  const cleared = config.lastSwitch;
+  config.lastSwitch = null;
+  const file = writeConfig(options, config);
+  return { ok: true, cleared, configFile: file };
+}
+
 module.exports = {
   CONFIG_VERSION,
   resolveSkillsRoot,
@@ -167,4 +258,7 @@ module.exports = {
   validateHubPath,
   setHub,
   clearHub,
+  recordLastMigration,
+  recordLastSwitch,
+  clearLastSwitch,
 };

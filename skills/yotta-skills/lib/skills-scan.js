@@ -197,6 +197,9 @@ function scanSkillDir(dir) {
     return results;
   }
   for (const e of entries) {
+    // 0.29.5 S4：点目录（.yottaskills-staging / .yottaskills-backup-* 等暂存残留）
+    // 绝不当作技能 slug。
+    if (e.name.startsWith('.')) continue;
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
     const skillDir = path.join(dir, e.name);
     try {
