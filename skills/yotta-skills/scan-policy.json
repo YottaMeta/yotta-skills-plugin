@@ -197,10 +197,10 @@
       ]
     },
     "yotta-memory": {
-      "version": "0.22.4",
-      "treeHash": "sha256:f38939bd59593243e1b1208fd854a004a192ecabec982b7b5be9d5daecf3840c",
+      "version": "0.22.5",
+      "treeHash": "sha256:7355dbaa40444ca89038dfeb27f43920cad497b87b2ce772118964ca724521c7",
       "files": 18,
-      "bytes": 1314249,
+      "bytes": 1319748,
       "mode": "strict",
       "exceptions": [
         {

@@ -8,7 +8,7 @@
 | `yotta-anti-shallow` | 元谨 | `@yottameta/yotta-anti-shallow` | 1.4.2 | quality | 防 AI 敷衍规则引擎（深入分析/根因追溯时激活） |
 | `yotta-code-quality` | 元质 | `@yottameta/yotta-code-quality` | 0.4.3 | quality | 结对式代码质量评审（十二类腐化风险 + 0-100 健康分） |
 | `yotta-workflow` | 元序 | `@yottameta/yotta-workflow` | 0.4.3 | workflow | 跨会话/跨项目通用工作流协议（状态就近存） |
-| `yotta-memory` | 元忆 | `@yottameta/yotta-memory` | 0.22.4 | memory | 有权限边界的文件式智能体记忆（FACT/PREF/BOUND/COMMIT） |
+| `yotta-memory` | 元忆 | `@yottameta/yotta-memory` | 0.22.5 | memory | 有权限边界的文件式智能体记忆（FACT/PREF/BOUND/COMMIT） |
 | `yotta-learn` | 元习 | `@yottameta/yotta-learn` | 0.4.0 | memory | 学习闭环 + 知识库（CLI / MCP / 本地面板）：经验沉淀为 .learnings/ 条目；知识分类索引 + 关键词查询 |
 | `yotta-security-audit` | 元安 | `@yottameta/yotta-security-audit` | 0.3.1 | security | 安全扫描引擎：13 类检测器 + 系统安全基线 + 学生数据隐私（教育版） |
 | `yotta-vetter` | 元审 | `@yottameta/yotta-vetter` | 0.2.7 | security | 安全审查协议：四阶段 review + SAFE TO INSTALL 判定 |
