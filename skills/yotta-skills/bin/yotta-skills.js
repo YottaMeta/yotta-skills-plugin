@@ -62,7 +62,7 @@ const { COPY_SKIP, copyDir } = require('../lib/copy-tree');
 const { versionRelation } = require('../lib/skills-scan');
 
 const PKG_ROOT = path.join(__dirname, '..');
-let VERSION = '0.29.8';
+let VERSION = '0.29.9';
 try { VERSION = require(path.join(PKG_ROOT, 'package.json')).version; } catch (_) { /* keep fallback */ }
 
 // @generated view-html:start
