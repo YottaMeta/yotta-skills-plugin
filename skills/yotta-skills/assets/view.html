@@ -1190,11 +1190,15 @@
   }
   function renderCliHelp(d) {
     if (!d || d.error) { $('#cliMeta').textContent = '帮助加载失败'; return; }
-    var total = 0;
+    var total = 0, optTotal = (d.options || []).length;
     (d.groups || []).forEach(function (g) {
-      (g.commands || []).forEach(function (c) { total += 1 + (c.subcommands || []).length; });
+      (g.commands || []).forEach(function (c) {
+        total += 1 + (c.subcommands || []).length;
+        optTotal += (c.options || []).length;
+        (c.subcommands || []).forEach(function (s) { optTotal += (s.options || []).length; });
+      });
     });
-    $('#cliMeta').textContent = 'v' + (d.version || '-') + ' · 命令 ' + total + ' · 选项 ' + (d.options || []).length;
+    $('#cliMeta').textContent = 'v' + (d.version || '-') + ' · 命令 ' + total + ' · 选项 ' + optTotal;
     $('#cliQuick').innerHTML = (d.quick || []).map(function (g) {
       return '<div class="cmd-group"><h3>' + esc(g.group) + '</h3>' + (g.items || []).map(function (item) {
         var meta = findHelpEntry(d.groups, item.cmd) || {};
@@ -1210,7 +1214,10 @@
           ? '<div class="note">常用选项: ' + c.options.map(function (f) { return '<code>' + esc(f) + '</code>'; }).join(' ') + '</div>'
           : '';
         var subs = (c.subcommands || []).map(function (s) {
-          return '<div class="cmd"><code>' + esc('yotta-skills ' + s.usage) + '</code><span class="why">' + esc(s.what || '') + '</span><button class="btn small" data-copy-cmd="' + esc('yotta-skills ' + s.usage) + '">复制</button></div>';
+          var sOpts = (s.options || []).length
+            ? '<div class="note">选项: ' + s.options.map(function (f) { return '<code>' + esc(f) + '</code>'; }).join(' ') + '</div>'
+            : '';
+          return '<div class="cmd"><code>' + esc('yotta-skills ' + s.usage) + '</code><span class="why">' + esc(s.what || '') + '</span>' + sOpts + '<button class="btn small" data-copy-cmd="' + esc('yotta-skills ' + s.usage) + '">复制</button></div>';
         }).join('');
         return '<details class="cmd-detail"><summary><code>' + esc('yotta-skills ' + c.usage) + '</code> <span class="why">' + esc(c.what || '') + '</span></summary>' +
           (c.when ? '<div class="note">' + esc(c.when) + '</div>' : '') + opts + subs + '</details>';
