@@ -749,6 +749,47 @@ function classifyTarget(target, hubDir) {
   return { kind: 'file' };
 }
 
+/**
+ * 0.30.0 UX-02 / OPT-01：以文件系统为真源扫描目标目录内的链接。
+ * - hubSlugs：指向当前 Hub 的链接（可安全清理）
+ * - otherLinks：指向其它位置的链接（fail-closed，不动；供错位警告）
+ */
+function scanDirForHubLinks(targetDir, hubDir) {
+  const hubSlugs = [];
+  const otherLinks = [];
+  let entries = [];
+  try {
+    entries = fs.readdirSync(targetDir, { withFileTypes: true });
+  } catch (_) {
+    return { hubSlugs, otherLinks, scanned: 0, readable: false };
+  }
+  for (const entry of entries) {
+    const target = path.join(targetDir, entry.name);
+    const current = classifyTarget(target, hubDir);
+    if (current.kind !== 'link') continue;
+    if (current.inHub) hubSlugs.push(entry.name);
+    else otherLinks.push({ slug: entry.name, target: current.target, root: foreignHubRoot(current.target) });
+  }
+  return { hubSlugs, otherLinks, scanned: entries.length, readable: true };
+}
+
+/**
+ * 解析链接目标所属的「其它 Hub」根目录：宿主链接通常指向 <hub>/<slug>，
+ * 因此先看目标本身、再看父目录是否含元阁 Hub 台账标记；都不是则返回 null。
+ */
+function foreignHubRoot(target) {
+  if (!target) return null;
+  const resolved = path.resolve(target);
+  for (const dir of [resolved, path.dirname(resolved)]) {
+    try {
+      if (fs.existsSync(path.join(dir, STATE_FILE))) return dir;
+      if (fs.existsSync(path.join(dir, LINKS_FILE))) return dir;
+      if (fs.existsSync(path.join(dir, AUDIT_FILE))) return dir;
+    } catch (_) { /* 单个候选失败继续 */ }
+  }
+  return null;
+}
+
 function linkSkills(options) {
   const opts = options || {};
   const hubDir = path.resolve(opts.hubDir);
@@ -1125,13 +1166,32 @@ function unlinkSkills(options) {
   const hubDir = path.resolve(opts.hubDir);
   const targetDir = path.resolve(opts.targetDir);
   const dryRun = Boolean(opts.dryRun);
-  const slugs = Array.isArray(opts.slugs) && opts.slugs.length > 0
-    ? opts.slugs
-    : readLinkState(hubDir).links
+  const linkState = readLinkState(hubDir);
+  let slugs = null;
+  let discovery = null;
+  if (Array.isArray(opts.slugs) && opts.slugs.length > 0) {
+    slugs = opts.slugs;
+  } else {
+    // 0.30.0 UX-02 / OPT-01：无 slug 时以文件系统为真源扫描目标目录
+    // （台账仅作辅助），保证「指向当前 Hub 的链接」即使台账缺失也能被清理；
+    // 同时记录指向其它位置的链接数，供调用方输出错位警告。
+    const ledgerSlugs = linkState.links
       .filter((item) => samePath(item.dir || '', targetDir))
       .map((item) => item.slug);
+    const scan = scanDirForHubLinks(targetDir, hubDir);
+    slugs = [...new Set(ledgerSlugs.concat(scan.hubSlugs))];
+    discovery = {
+      source: 'filesystem+ledger',
+      fromLedger: ledgerSlugs.length,
+      fromFilesystem: scan.hubSlugs.length,
+      scannedEntries: scan.scanned,
+      dirReadable: scan.readable,
+      otherLinks: scan.otherLinks.length,
+      otherTargets: [...new Set(scan.otherLinks.map((item) => item.root || item.target))].slice(0, 5),
+    };
+  }
   const unique = [...new Set(slugs)];
-  const links = readLinkState(hubDir).links.slice();
+  const links = linkState.links.slice();
   const results = [];
 
   for (const slug of unique) {
@@ -1165,7 +1225,7 @@ function unlinkSkills(options) {
     }
   }
   if (!dryRun) writeLinkState(hubDir, { links });
-  return { hubDir, targetDir, dryRun, results };
+  return { hubDir, targetDir, dryRun, results, discovery };
 }
 
 /**
@@ -1640,6 +1700,39 @@ function doctor(options) {
     }
   }
 
+  // 0.30.0 UX-03：宿主链接目标 vs 当前 Hub 一致性（配置错位提前发现）。
+  if (scopeDirs && scopeDirs.length > 0) {
+    const foreign = new Map();
+    for (const dir of scopeDirs) {
+      let entries = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch (_) {
+        continue;
+      }
+      for (const entry of entries) {
+        const target = path.join(dir, entry.name);
+        const current = classifyTarget(target, hubDir);
+        if (current.kind !== 'link' || current.inHub) continue;
+        const root = foreignHubRoot(current.target);
+        if (!root) continue;
+        if (!foreign.has(root)) {
+          foreign.set(root, { count: 0, dirs: new Set(), slugs: new Set() });
+        }
+        const rec = foreign.get(root);
+        rec.count += 1;
+        rec.dirs.add(dir);
+        rec.slugs.add(entry.name);
+      }
+    }
+    for (const [target, rec] of foreign) {
+      add('hub_mismatch:' + pathKey(target), false, 'warning',
+        '发现 ' + rec.count + ' 条链接指向其它 Hub: ' + target + '（当前 Hub: ' + hubDir + '）',
+        '核对位置来源: yotta-skills hub config get；恢复配置 = hub config set --hub "' + target +
+        '"，或重链到当前 Hub = hub link --all --force。');
+    }
+  }
+
   try {
     singleSourceChecks(opts, add);
   } catch (_) { /* 只读检查失败不影响 doctor 主流程 */ }
@@ -1711,6 +1804,7 @@ module.exports = {
   createDirLink,
   removeDirLink,
   classifyTarget,
+  scanDirForHubLinks,
   linkSkills,
   unlinkSkills,
   removeSkills,

@@ -204,6 +204,7 @@ function overviewPayload(ctx) {
       configured: hubNow.configured,
       configFile: hubNow.configFile,
       effectiveNow: hubNow.dir,
+      defaultDir: skillsConfigLib.defaultHubDir({ homeDir: ctx.homeDir, env: ctx.env }),
       restartRequired: !ctx.hubFlag && !sameDir(hubNow.dir, ctx.hubDir),
     },
     standard: hubLib.STANDARD_ID,
@@ -278,9 +279,25 @@ function hostsPayload(ctx) {
   }));
   const hosts = found.hosts.map((host) => {
     const hostLinks = links.filter((link) => sameDir(link.dir, host.dir));
+    const ledgerOk = hostLinks.filter((link) => link.status === 'ok').length;
+    // 0.30.0 OPT-03：「指向当前 Hub」以文件系统为真源（台账辅助）；指向其它
+    // 位置的链接单独计数（只统计能识别为「其它 Hub」的目标），用于配置错位预警。
+    let scan = null;
+    if (host.exists && !host.bridgeOnly) {
+      try {
+        scan = hubLib.scanDirForHubLinks(host.dir, ctx.hubDir);
+      } catch (_) {
+        scan = null;
+      }
+    }
+    const otherHubLinks = scan ? scan.otherLinks.filter((item) => item.root) : [];
+    const otherHubRoots = [...new Set(otherHubLinks.map((item) => item.root))];
     return {
       ...host,
-      hubLinks: hostLinks.filter((link) => link.status === 'ok').length,
+      hubLinks: scan ? scan.hubSlugs.length : ledgerOk,
+      hubLinksLedger: ledgerOk,
+      hubLinksOther: otherHubLinks.length,
+      hubLinksOtherRoots: otherHubRoots.slice(0, 3),
       brokenLinks: hostLinks.filter((link) => link.status !== 'ok').length,
     };
   });
@@ -309,6 +326,7 @@ function hostsPayload(ctx) {
       overrides: (registry.overrides || []).length,
       links: links.length,
       brokenLinks: links.filter((link) => link.status !== 'ok').length,
+      otherHubLinks: hosts.reduce((sum, host) => sum + (host.hubLinksOther || 0), 0),
       // 0.29.0 F3：宿主生命周期状态细分（面板分组 / 筛选）。
       states: {
         available: hosts.filter((host) => host.state === 'available').length,
@@ -662,6 +680,27 @@ function writeHostRemove(ctx, body) {
     via: 'view',
   });
   return { code: 200, payload: { action: 'hosts.remove', removed: result.removed } };
+}
+
+function writeHostRename(ctx, body) {
+  const dir = String(body.dir || '').trim();
+  const id = String(body.id || '').trim();
+  const label = String(body.label || '').trim();
+  if (!label) return { code: 400, payload: { error: '缺少新名称。' } };
+  if (!dir && !id) return { code: 400, payload: { error: '缺少目标目录或 agentId。' } };
+  const result = hostsRegistryLib.renameHost(
+    { homeDir: ctx.homeDir, env: ctx.env },
+    { dir, id, label },
+  );
+  if (!result.ok) return { code: 400, payload: { error: result.error } };
+  auditViewHostEvent(ctx, {
+    event: 'hosts.rename',
+    dir: result.entry.dir,
+    from: result.previous,
+    to: result.entry.label,
+    via: 'view',
+  });
+  return { code: 200, payload: { action: 'hosts.rename', entry: result.entry, previous: result.previous } };
 }
 
 function writeHostPurge(ctx, body) {
@@ -1117,6 +1156,7 @@ function handlePost(ctx, pathname, req, res) {
       if (pathname === '/api/skills/remove') return writeRemove(ctx, body);
       if (pathname === '/api/hosts/add') return writeHostAdd(ctx, body);
       if (pathname === '/api/hosts/remove') return writeHostRemove(ctx, body);
+      if (pathname === '/api/hosts/rename') return writeHostRename(ctx, body);
       if (pathname === '/api/hosts/purge') return writeHostPurge(ctx, body);
       if (pathname === '/api/hosts/mark') return writeHostMark(ctx, body);
       if (pathname === '/api/hosts/set') return writeHostSet(ctx, body);

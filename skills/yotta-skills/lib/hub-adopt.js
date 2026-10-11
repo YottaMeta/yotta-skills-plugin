@@ -314,7 +314,18 @@ function refreshFrom(options) {
     }
     scan = opts.scan(source, { slug });
     if (!scan.ok) return { ok: false, slug, error: scan.error || '扫描失败' };
-    if (scan.block && !opts.allowUnverified) return { ok: false, slug, error: '元信 verdict: ' + scan.verdict };
+    if (scan.block && !opts.allowUnverified) {
+      return {
+        ok: false, slug, error: '元信 verdict: ' + scan.verdict, blocked: true,
+        // 0.30.0 OPT-05：附带扫描明细，供 CLI 输出「与上一已审版本」差异摘要。
+        scan: {
+          verdict: scan.verdict,
+          counts: scan.counts || null,
+          findings: scan.findings || null,
+          excluded: (scan.policy && scan.policy.excludedFindings) || [],
+        },
+      };
+    }
   }
   let backup = null;
   let tmp = null;

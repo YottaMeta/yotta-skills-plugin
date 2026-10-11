@@ -24,7 +24,7 @@ npx -y @yottameta/yotta-skills hub config set --hub "D:\my-hub"        # 只换�
 npx -y @yottameta/yotta-skills hub config set --hub "D:\my-hub" --move # 迁移：复制校验 → 重链 → 旧 Hub 入回收站
 npx -y @yottameta/yotta-skills hub config rollback           # 回滚预览（上次迁移前的原位置）
 npx -y @yottameta/yotta-skills hub config rollback --yes     # 执行回滚（位置回退，用当前内容）
-npx -y @yottameta/yotta-skills hub config clear              # 清除覆盖，回到 flag > env > 默认
+npx -y @yottameta/yotta-skills hub config clear              # 清除覆盖（有技能时默认阻断，确认影响后加 --yes）
 ```
 
 - 配置文件：`<YOTTA_SKILLS_HOME>/config.json`（默认 `~/.yottaskills/config.json`；schema v1，原子写）。
@@ -34,6 +34,7 @@ npx -y @yottameta/yotta-skills hub config clear              # 清除覆盖，�
 - 迁移记录：`config.json` 的 `lastMigration` 记录时间 / from→to / 校验技能数 / 重链目录数 / 回收站与剩余天数；`hub config get` 展示「最近一次迁移」块与回滚命令。
 - 回滚语义：`hub config rollback` 默认预览、`--yes` 执行 = 位置回退（把当前 Hub 内容复制校验回原位置，再重链、当前 Hub 入回收站 7 天）；**不是**恢复旧快照。目标非空 fail-closed（不合并）。
 - 仅切换指针（不带 `--move`）时，若旧 Hub 非空会记录「未迁移」并在面板提示「旧 Hub 还有 N 个技能未迁移」+ 一键迁移；执行迁移 / 回滚后该提示自动清除。
+- `hub config clear` 影响面防护（0.30.0）：当前配置 Hub 仍有技能时默认阻断（fail-closed），输出影响面（回落默认位置、真源与链接不移动）、替代路径（`hub config set --hub <新路径> --move`）与 `--yes` 指引；确认后加 `--yes` 执行。`hub config get` 若检测到运行中的 `view` 面板仍用旧位置，会提示重启面板生效。
 - 面板「Hub 位置」区显示来源 / 配置覆盖 / 重启提示，并提供「设置新位置（迁移向导：迁移 / 仅切换，默认迁移）/ 最近一次迁移 + 一键回滚 / 清除覆盖」（写操作需页面令牌 + `hub-config` 确认串）；已在运行的 `view` 需重启后生效。
 - 误用防护：`--hub` 只允许与 `hub` / `view` / `where` 一起使用；其它命令（含裸 `--hub`）fail-closed 报错，不再静默忽略。
 
@@ -99,6 +100,7 @@ Hub 真源对清单声明了 `runtimePayload` 的技能（元忆 / 元阁：`bin
   可显式清理；文案统一「实体未确认」，不判定「已卸载」；
 - **未创建**：目录不存在且无实体证据 —— 安装宿主后自动出现；
 - **仅标记**：已装实体、技能目录未创建 —— `hub link --agent <id>` 会创建目录并链接。
+- **隐藏标记**（`ignored`）：只影响列表显示，不拦截任何行为；真正拦截发现 / 显示 / 链接的是「不接管」（`hosts exclude`）。
 
 `hub doctor` 的 `host_state:*` 检查对残留 / 仅标记给 info 提示，不判 fail。
 自定义宿主目录可用 `hub hosts add` 注册进发现 / 分发 / 收编范围（只注册，
@@ -107,10 +109,11 @@ Hub 真源对清单声明了 `runtimePayload` 的技能（元忆 / 元阁：`bin
 ```bash
 # 注册 / 查看 / 移除自定义宿主（realpath 去重；Hub / 桥接目录拒绝注册）
 npx -y @yottameta/yotta-skills hub hosts add ~/my-agent/skills --label "我的宿主"
+npx -y @yottameta/yotta-skills hub hosts rename ~/my-agent/skills --label "新名字"   # 一步改名（只改显示名）
 npx -y @yottameta/yotta-skills hub hosts list
 npx -y @yottameta/yotta-skills hub hosts remove ~/my-agent/skills
 
-# 手动标记状态（实体证据不足时）：available / orphan / ignored
+# 手动标记状态（实体证据不足时）：available / orphan / ignored（隐藏标记，只影响显示）
 npx -y @yottameta/yotta-skills hub hosts mark ~/my-agent/skills --state orphan
 
 # 清理残留目录：默认预览；--yes 执行 —— 只删指向 Hub 的链接（含死链），
@@ -121,6 +124,7 @@ npx -y @yottameta/yotta-skills hub hosts remove ~/my-agent/skills --purge --yes
 
 注册表 = `<root>/hosts.json`（root = `YOTTA_SKILLS_HOME` 或 `~/.yottaskills`，schema v1，
 可 diff）；面板「宿主矩阵 → 添加自定义目录」等价可用，写操作需页面令牌与确认串。
+移除注册 / 不接管后若该目录仍有 Hub 链接，CLI 会提示剩余条数与 `hub unlink --dir` 清理指引（面板确认框同源显示）。
 
 ## 不接管与目录覆盖（0.29.1 起）
 
@@ -141,7 +145,7 @@ npx -y @yottameta/yotta-skills hub hosts set box --dir "D:\box-agent\skills"
 npx -y @yottameta/yotta-skills hub hosts set box --clear     # 恢复内置映射
 ```
 
-面板「宿主矩阵」提供等价动作：行内「不接管 / 编辑目录 / 标记可用 / 忽略」，
+面板「宿主矩阵」提供等价动作：行内「不接管 / 编辑目录 / 标记可用 / 隐藏标记 / 重命名（自定义注册）」，
 底部「不接管名单」区可「恢复接管」；写操作均写 Hub 审计。
 
 **YottaCode 不纳入接管**：YottaCode 自带三层技能管理（skill-inventory / skill /
@@ -184,7 +188,7 @@ npx -y @yottameta/yotta-skills hub link --all
 # 显式把自动发现目录一并纳入（桥接目录永不链接）
 npx -y @yottameta/yotta-skills hub link --all --include-discovered
 
-# 只删除链接，不动 Hub 真源；清理范围外链接用 --dir <目录> 精确指定
+# 只删除链接，不动 Hub 真源；--dir 不带 slug 时以文件系统为真源清理该目录全部 Hub 链接
 npx -y @yottameta/yotta-skills hub unlink --all
 
 # 指定智能体分发 / 解除（只影响该宿主；Hub 真源保留）
@@ -257,7 +261,7 @@ install / update / refresh 只在高级 CLI 页给出可复制命令，不在网
 
 ## 安全边界
 
-- `unlink` 只删除 lstat 确认为链接、且 readlink 目标位于 Hub 内的路径。
+- `unlink` 只删除 lstat 确认为链接、且 readlink 目标位于当前 Hub 内的路径；`--dir` 不带 slug 时以文件系统为真源枚举该目录（台账缺失也能清理），指向其它位置的链接 fail-closed 不动并给出错位警告。
 - 真目录 / 非 Hub 链接一律拒绝删除；`--force` 对真目录把旧副本移入回收站（7 天）再替换；
   替换失败会把旧副本移回原位（回收站路径随结果输出）。
 - `remove` 只删指向 Hub 的链接与 Hub 内目录；链接清理报错即中止、不删 Hub；

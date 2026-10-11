@@ -140,6 +140,12 @@
   .cmd-detail .note{padding:0 0 8px}
   .cmd-detail .cmd{margin:0 0 8px}
 
+  /* 0.30.0 UX-05：术语速查 */
+  .glossary{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:0 12px}
+  .glossary summary{padding:10px 0}
+  .glossary-body{display:grid;gap:6px;padding:0 0 12px;font-size:12px;color:var(--muted)}
+  .glossary-body b{color:var(--text)}
+
   @media (max-width:980px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media (max-width:760px){
     .shell{grid-template-columns:minmax(0,1fr)}
@@ -211,7 +217,7 @@
           <button class="btn small" data-goto="records">查看记录</button>
           <button class="btn small" id="copyHubDir">复制路径</button>
           <button class="btn small" id="hubConfigBtn">设置新位置</button>
-          <button class="btn small" id="hubConfigClearBtn" hidden>清除覆盖</button>
+          <button class="btn small" id="hubConfigClearBtn" hidden title="清除持久 Hub 位置覆盖，回落默认解析；当前 Hub 有技能时会先展示影响面">清除覆盖</button>
         </div>
       </div>
       <div class="section" id="ovSwitchBanner" hidden></div>
@@ -231,9 +237,21 @@
         <div class="chips" id="hostStateChips"></div>
         <button class="btn small" id="hostAddBtn">添加自定义目录</button>
       </div>
+      <details class="glossary section">
+        <summary>术语速查</summary>
+        <div class="glossary-body">
+          <div><b>可用</b>：宿主实体确认、技能目录存在（默认分发范围）。</div>
+          <div><b>残留</b>：宿主实体未确认（疑似已卸载）；可用「清理」把目录移入回收站。</div>
+          <div><b>仅标记</b>：检测到宿主已安装，但技能目录尚未创建。</div>
+          <div><b>隐藏标记</b>：只影响列表显示，不拦截任何行为（ignored）。</div>
+          <div><b>不接管</b>：发现 / 显示 / 链接三层全部跳过；已有链接不动（真正拦截行为的开关）。</div>
+          <div><b>清理</b>：解除指向 Hub 的链接 + 目录移入回收站（保留 7 天可恢复）。</div>
+          <div><b>桥接</b>：锁 / 数据目录（如 XDG state），永不作为链接目标。</div>
+        </div>
+      </details>
       <div class="section panel">
         <div class="faint" id="hostSummary"></div>
-        <table><thead><tr><th>宿主</th><th>技能目录</th><th>范围</th><th>目录技能</th><th>指向 Hub</th><th>异常</th><th>状态</th><th></th></tr></thead><tbody id="hostRows"></tbody></table>
+        <table><thead><tr><th>宿主</th><th>技能目录</th><th>范围</th><th>目录技能</th><th title="只统计指向当前生效 Hub 的链接（文件系统为真源）；指向其它位置的链接单独标注（配置错位预警）">指向当前 Hub</th><th>异常</th><th>状态</th><th></th></tr></thead><tbody id="hostRows"></tbody></table>
         <div class="empty" id="hostEmpty" hidden>没有匹配的宿主目录。</div>
       </div>
       <div class="section panel"><h3>已安装标记（无技能目录的宿主）</h3><div class="list" id="hostMarks"></div></div>
@@ -695,7 +713,20 @@
 
   $('#hubConfigBtn').onclick = openHubConfigWizard;
   $('#hubConfigClearBtn').onclick = function () {
-    confirmModal('清除 Hub 位置覆盖？', '<p class="label">将删除 config.json 中的 Hub 覆盖，恢复 --hub &gt; 环境变量 &gt; 默认位置的解析。不会移动任何文件。</p>', '清除覆盖', true, async function () {
+    var d = state.overview || {};
+    var hubInfo = d.hub || {};
+    var skills = (d.status && d.status.summary && d.status.summary.skills) || 0;
+    var body = '<p class="label">将删除 config.json 中的 Hub 覆盖，恢复 --hub &gt; 环境变量 &gt; 默认位置的解析。不会移动任何文件。</p>' +
+      '<div class="result"><span class="badge warn">影响面</span><b>' + esc(skills) + '</b><span>个技能与已建链接仍在 <span class="mono">' + esc(hubInfo.configured || d.hubDir || '') + '</span>；清除后生效位置回落到默认 <span class="mono">' + esc(hubInfo.defaultDir || '默认位置') + '</span>（可能是空目录），面板 / CLI 将按新位置工作。</span></div>' +
+      '<p class="faint">替代路径：迁移到默认位置或其它位置，用「设置新位置」向导（等价 CLI hub config set --hub &lt;路径&gt; --move）。</p>';
+    if (skills > 0) {
+      body += '<div class="section"><label class="label">输入 clear 确认（当前 Hub 有技能）：</label><input id="hubClearConfirm" placeholder="clear"></div>';
+    }
+    confirmModal('清除 Hub 位置覆盖？', body, '清除覆盖', true, async function () {
+      if (skills > 0) {
+        var typed = ($('#hubClearConfirm') && $('#hubClearConfirm').value || '').trim();
+        if (typed !== 'clear') { toast('确认串不匹配（输入 clear）'); return; }
+      }
       var r = await api('/api/hub/config', { body: { clear: true, confirm: 'hub-config' } });
       if (r.error) { toast(r.error); return; }
       closeModal();
@@ -756,7 +787,7 @@
     if (d.error) { toast(d.error); return; }
     state.hosts = d;
     var s = d.summary.states || {};
-    $('#hostSummary').textContent = '可用 ' + (s.available || 0) + ' · 残留 ' + (s.orphan || 0) + ' · 未创建 ' + (s.missing || 0) + ' · 仅标记 ' + (s.markerOnly || 0) + (s.ignored ? ' · 已忽略 ' + s.ignored : '') + (d.summary.excluded ? ' · 不接管 ' + d.summary.excluded : '') + ' · 链接 ' + d.summary.links + '（异常 ' + d.summary.brokenLinks + '）';
+    $('#hostSummary').textContent = '可用 ' + (s.available || 0) + ' · 残留 ' + (s.orphan || 0) + ' · 未创建 ' + (s.missing || 0) + ' · 仅标记 ' + (s.markerOnly || 0) + (s.ignored ? ' · 隐藏标记 ' + s.ignored : '') + (d.summary.excluded ? ' · 不接管 ' + d.summary.excluded : '') + ' · 链接 ' + d.summary.links + '（异常 ' + d.summary.brokenLinks + '）' + (d.summary.otherHubLinks ? ' · 指向其它 Hub ' + d.summary.otherHubLinks : '');
     renderHostStateChips();
     renderHosts();
     var marks = d.unpaired || [];
@@ -780,6 +811,7 @@
       ['orphan', '残留 ' + (s.orphan || 0)],
       ['missing', '未创建 ' + (s.missing || 0)],
       ['marker-only', '仅标记 ' + (s.markerOnly || 0)],
+      ['ignored', '隐藏标记 ' + (s.ignored || 0)],
     ];
     $('#hostStateChips').innerHTML = chips.map(function (c) {
       return '<button class="chip' + (state.hostStateFilter === c[0] ? ' active' : '') + '" data-host-state="' + esc(c[0]) + '">' + esc(c[1]) + '</button>';
@@ -787,7 +819,7 @@
   }
   function hostStateBadge(h) {
     if (h.bridgeOnly) return '<span class="badge info">桥接</span>';
-    var map = { available: ['ok', '可用'], orphan: ['warn', '残留'], missing: ['', '未创建'], 'marker-only': ['info', '仅标记'], ignored: ['', '已忽略'] };
+    var map = { available: ['ok', '可用'], orphan: ['warn', '残留'], missing: ['', '未创建'], 'marker-only': ['info', '仅标记'], ignored: ['', '隐藏标记'] };
     var item = map[h.state] || ['', h.state || '未知'];
     return '<span class="badge ' + item[0] + '">' + esc(item[1]) + (h.stateSource === 'manual' ? '·手动' : '') + '</span>' + (h.brokenLinks ? ' <span class="badge danger">异常</span>' : '');
   }
@@ -810,19 +842,25 @@
         : (h.verified ? '<span class="badge ok">已核实</span>'
         : ((h.detection === 'discovered' || h.detection === 'workspace') ? '<span class="badge warn">自动发现</span>' : '<span class="badge warn">映射·未核实</span>'))));
       var action = '';
-      if (h.exists && h.state === 'orphan' && !h.bridgeOnly) action += '<button class="btn small danger" data-host-purge="' + esc(h.dir) + '">清理</button> ';
-      if (h.state === 'ignored') action += '<button class="btn small" data-host-mark="' + esc(h.dir) + '" data-mark-state="available">标记可用</button> ';
-      else if (h.exists && !h.bridgeOnly) action += '<button class="btn small" data-host-mark="' + esc(h.dir) + '" data-mark-state="ignored">忽略</button> ';
+      if (h.exists && h.state === 'orphan' && !h.bridgeOnly) action += '<button class="btn small danger" data-host-purge="' + esc(h.dir) + '" title="清理残留：解除指向 Hub 的链接 + 目录移入回收站（7 天可恢复）">清理</button> ';
+      if (h.state === 'ignored') action += '<button class="btn small" data-host-mark="' + esc(h.dir) + '" data-mark-state="available" title="恢复为可用状态（仅状态标记）">标记可用</button> ';
+      else if (h.exists && !h.bridgeOnly) action += '<button class="btn small" data-host-mark="' + esc(h.dir) + '" data-mark-state="ignored" title="只影响列表显示，不拦截行为（拦截用「不接管」）">隐藏标记</button> ';
       if (h.agentId && !h.bridgeOnly) {
-        if (overrideIds[String(h.agentId).toLowerCase()]) action += '<button class="btn small" data-host-clear="' + esc(h.agentId) + '">恢复默认</button> ';
-        else action += '<button class="btn small" data-host-edit="' + esc(h.agentId) + '" data-host-dir="' + esc(h.dir) + '" data-host-label="' + esc(h.label) + '">编辑目录</button> ';
+        if (overrideIds[String(h.agentId).toLowerCase()]) action += '<button class="btn small" data-host-clear="' + esc(h.agentId) + '" title="删除目录覆盖，恢复内置映射">恢复默认</button> ';
+        else action += '<button class="btn small" data-host-edit="' + esc(h.agentId) + '" data-host-dir="' + esc(h.dir) + '" data-host-label="' + esc(h.label) + '" title="写入目录覆盖（hosts.json），不改宿主配置">编辑目录</button> ';
       }
-      if (!h.bridgeOnly) action += '<button class="btn small" data-host-exclude="' + esc(h.agentId || h.dir) + '">不接管</button> ';
-      if (h.detection === 'user-registry') action += '<button class="btn small" data-host-unregister="' + esc(h.dir) + '">移除注册</button>';
+      if (!h.bridgeOnly) action += '<button class="btn small" data-host-exclude="' + esc(h.agentId || h.dir) + '" data-host-links="' + esc(h.hubLinks || 0) + '" title="加入不接管名单：发现 / 显示 / 链接三层跳过；已有链接不动">不接管</button> ';
+      if (h.detection === 'user-registry') action += '<button class="btn small" data-host-rename="' + esc(h.dir) + '" data-host-label="' + esc(h.label) + '" title="只改显示名；目录与手动状态保持">重命名</button> ';
+      if (h.detection === 'user-registry') action += '<button class="btn small" data-host-unregister="' + esc(h.dir) + '" data-host-links="' + esc(h.hubLinks || 0) + '" title="只移除注册，不删目录；已有链接不清理（用 hub unlink --dir）">移除注册</button>';
+      var linksCell = esc(h.hubLinks || 0);
+      if (h.hubLinksOther) {
+        var otherTitle = '指向其它位置的链接（配置错位预警）' + ((h.hubLinksOtherRoots || []).length ? '：' + h.hubLinksOtherRoots.join(' / ') : '');
+        linksCell += ' <span class="badge warn" title="' + esc(otherTitle) + '">其它 Hub ' + esc(h.hubLinksOther) + '</span>';
+      }
       return '<tr><td><div class="cell-main">' + esc(h.label) + '</div><div class="cell-sub">' + esc(h.agentId || (h.known ? '已知宿主' : h.detection || '自动发现')) + '</div></td>' +
         '<td><div class="mono">' + esc(h.dir) + '</div><button class="btn small" data-copy="' + esc(h.dir) + '">复制</button></td>' +
         '<td>' + scopeBadge + '</td>' +
-        '<td>' + esc(h.skillCount || 0) + '</td><td>' + esc(h.hubLinks || 0) + '</td><td>' + esc(h.brokenLinks || 0) + '</td><td>' + hostStateBadge(h) + '</td><td>' + action + '</td></tr>';
+        '<td>' + esc(h.skillCount || 0) + '</td><td>' + linksCell + '</td><td>' + esc(h.brokenLinks || 0) + '</td><td>' + hostStateBadge(h) + '</td><td>' + action + '</td></tr>';
     }).join('');
   }
   $('#hostSearch').addEventListener('input', function (e) { state.hostFilter = e.target.value; renderHosts(); });
@@ -906,10 +944,36 @@
       });
       return;
     }
+    var renameBtn = e.target.closest('[data-host-rename]');
+    if (renameBtn) {
+      var renameDir = renameBtn.dataset.hostRename;
+      var oldLabel = renameBtn.dataset.hostLabel;
+      openModal('重命名宿主 · ' + esc(oldLabel),
+        '<p class="label">只改显示名；目录、手动状态与目录覆盖保持不动。</p>' +
+        '<div class="section"><label class="label">新名称</label><input id="hostRenameLabel" value="' + esc(oldLabel) + '"></div>', {
+        okText: '保存',
+        onOk: async function () {
+          var value = ($('#hostRenameLabel') && $('#hostRenameLabel').value || '').trim();
+          if (!value) { toast('请填写新名称'); return; }
+          var r = await api('/api/hosts/rename', { body: { dir: renameDir, label: value } });
+          if (r.error) { toast(r.error); return; }
+          closeModal();
+          toast('已重命名：' + (r.previous ? r.previous + ' → ' : '') + value);
+          loadHosts();
+        },
+      });
+      return;
+    }
     var excludeBtn = e.target.closest('[data-host-exclude]');
     if (excludeBtn) {
       var excludeTarget = excludeBtn.dataset.hostExclude;
-      confirmModal('加入「不接管」名单？', '<p class="label">该宿主 / 目录将从发现、显示、链接三层全部跳过；已建立的链接不受影响（可用 CLI hub unlink 清理）。</p><div class="mono">' + esc(excludeTarget) + '</div>', '不接管', false, async function () {
+      var excludeLinks = Number(excludeBtn.dataset.hostLinks || 0);
+      var excludeBody = '<p class="label">该宿主 / 目录将从发现、显示、链接三层全部跳过（--include-discovered 也不纳入）；已有链接不受影响。</p>' +
+        (excludeLinks > 0
+          ? '<div class="result"><span class="badge warn">影响面</span><b>' + esc(excludeLinks) + '</b><span>条链接仍在该目录（用 hub unlink --dir 或「链接与体检」逐条解除）</span></div>'
+          : '<p class="faint">该目录当前没有指向 Hub 的链接。</p>') +
+        '<div class="mono">' + esc(excludeTarget) + '</div>';
+      confirmModal('加入「不接管」名单？', excludeBody, '不接管', false, async function () {
         var r = await api('/api/hosts/exclude', { body: { target: excludeTarget } });
         if (r.error) { toast(r.error); return; }
         closeModal();
@@ -922,14 +986,21 @@
     if (markBtn) {
       var r = await api('/api/hosts/mark', { body: { dir: markBtn.dataset.hostMark, state: markBtn.dataset.markState } });
       if (r.error) { toast(r.error); return; }
-      toast('已标记：' + markBtn.dataset.markState);
+      var markLabels = { available: '可用', orphan: '残留', ignored: '隐藏标记' };
+      toast('已标记：' + (markLabels[markBtn.dataset.markState] || markBtn.dataset.markState));
       loadHosts();
       return;
     }
     var unregBtn = e.target.closest('[data-host-unregister]');
     if (unregBtn) {
       var dir = unregBtn.dataset.hostUnregister;
-      confirmModal('移除注册？', '<p class="label">只移除自定义宿主注册，不删除目录、不改宿主配置。</p><div class="mono">' + esc(dir) + '</div>', '移除注册', false, async function () {
+      var unregLinks = Number(unregBtn.dataset.hostLinks || 0);
+      var unregBody = '<p class="label">只移除自定义宿主注册，不删除目录、不改宿主配置。</p>' +
+        (unregLinks > 0
+          ? '<div class="result"><span class="badge warn">影响面</span><b>' + esc(unregLinks) + '</b><span>条链接仍在该目录（移除注册不清理链接；用 hub unlink --dir 清理）</span></div>'
+          : '<p class="faint">该目录当前没有指向 Hub 的链接。</p>') +
+        '<div class="mono">' + esc(dir) + '</div>';
+      confirmModal('移除注册？', unregBody, '移除注册', false, async function () {
         var r = await api('/api/hosts/remove', { body: { dir: dir } });
         if (r.error) { toast(r.error); return; }
         closeModal();
@@ -1029,7 +1100,7 @@
     $('#linkTargets').innerHTML = existing.length ? existing.map(function (h) {
       var scopeBadge = h.bridgeOnly ? '<span class="badge info">桥接·不链接</span>' : h.verified ? '<span class="badge ok">已核实</span>' : '<span class="badge warn">自动发现</span>';
       var action = h.bridgeOnly ? '' : '<button class="btn small" data-link-plan="' + esc(h.dir) + '" data-label="' + esc(h.label) + '">预览链接</button>';
-      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(h.label) + ' ' + scopeBadge + '</div><div class="row-meta mono">' + esc(h.dir) + '</div><div class="row-meta">目录技能 ' + esc(h.skillCount || 0) + ' · 指向 Hub ' + esc(h.hubLinks || 0) + (h.brokenLinks ? ' · 异常 ' + h.brokenLinks : '') + '</div></div><div class="row-actions">' + action + '</div></div>';
+      return '<div class="row"><div class="row-main"><div class="row-title">' + esc(h.label) + ' ' + scopeBadge + '</div><div class="row-meta mono">' + esc(h.dir) + '</div><div class="row-meta">目录技能 ' + esc(h.skillCount || 0) + ' · 指向当前 Hub ' + esc(h.hubLinks || 0) + (h.hubLinksOther ? ' · <span class="badge warn">其它 Hub ' + esc(h.hubLinksOther) + '</span>' : '') + (h.brokenLinks ? ' · 异常 ' + h.brokenLinks : '') + '</div></div><div class="row-actions">' + action + '</div></div>';
     }).join('') : '<div class="empty">尚未发现可用的宿主技能目录。</div>';
     var rows = links.links || [];
     $('#linkEmpty').hidden = rows.length > 0;
@@ -1217,10 +1288,15 @@
           var sOpts = (s.options || []).length
             ? '<div class="note">选项: ' + s.options.map(function (f) { return '<code>' + esc(f) + '</code>'; }).join(' ') + '</div>'
             : '';
-          return '<div class="cmd"><code>' + esc('yotta-skills ' + s.usage) + '</code><span class="why">' + esc(s.what || '') + '</span>' + sOpts + '<button class="btn small" data-copy-cmd="' + esc('yotta-skills ' + s.usage) + '">复制</button></div>';
+          return '<div class="cmd"><code>' + esc('yotta-skills ' + s.usage) + '</code><span class="why">' + esc(s.what || '') + '</span>' + sOpts +
+            (s.impact ? '<div class="note">' + esc(s.impact) + '</div>' : '') +
+            (s.alternative ? '<div class="note">' + esc(s.alternative) + '</div>' : '') +
+            '<button class="btn small" data-copy-cmd="' + esc('yotta-skills ' + s.usage) + '">复制</button></div>';
         }).join('');
         return '<details class="cmd-detail"><summary><code>' + esc('yotta-skills ' + c.usage) + '</code> <span class="why">' + esc(c.what || '') + '</span></summary>' +
-          (c.when ? '<div class="note">' + esc(c.when) + '</div>' : '') + opts + subs + '</details>';
+          (c.when ? '<div class="note">' + esc(c.when) + '</div>' : '') +
+          (c.impact ? '<div class="note">' + esc(c.impact) + '</div>' : '') +
+          (c.alternative ? '<div class="note">' + esc(c.alternative) + '</div>' : '') + opts + subs + '</details>';
       }).join('') + '</div>';
     }).join('');
     full += '<div class="cmd-group"><h3>完整选项</h3>' + (d.options || []).map(function (o) {

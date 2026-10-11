@@ -183,7 +183,7 @@ function markHost(opts, input) {
   const options = opts || {};
   const state = input && input.state ? String(input.state).toLowerCase() : null;
   if (!MANUAL_STATES.includes(state)) {
-    return { ok: false, error: '未知手动状态：' + state + '（可用 available / 残留 orphan / 忽略 ignored）' };
+    return { ok: false, error: '未知手动状态：' + state + '（可用 available / 残留 orphan / 隐藏标记 ignored）' };
   }
   const dir = input && input.dir ? path.resolve(input.dir) : null;
   if (!dir) return { ok: false, error: '缺少目录' };
@@ -204,6 +204,33 @@ function markHost(opts, input) {
   entry.manualState = state;
   writeHostsRegistry(options, registry);
   return { ok: true, entry, registry };
+}
+
+/** 一步改名：只改显示名 label，不动目录 / 手动状态 / 覆盖（0.30.0 UX-08）。 */
+function renameHost(opts, input) {
+  const options = opts || {};
+  const label = String((input && input.label) || '').trim();
+  const labelError = validateLabel(label);
+  if (labelError) return { ok: false, error: labelError };
+  const dir = input && input.dir ? path.resolve(input.dir) : null;
+  const id = input && input.id ? String(input.id).trim().toLowerCase() : null;
+  if (!dir && !id) return { ok: false, error: '缺少目标：hub hosts rename <目录> --label <名称> 或 --id <agentId>' };
+  const registry = readHostsRegistry(options);
+  const entry = registry.hosts.find((item) =>
+    (dir && samePath(item.dir, dir)) ||
+    (id && String(item.agentId || '').toLowerCase() === id));
+  if (!entry) {
+    return {
+      ok: false,
+      error: '未找到注册项' + (dir ? '：' + dir : '：' + id),
+      hint: '本命令只改自定义注册表（hub hosts list）里的显示名；未注册目录先 hub hosts add <目录> --label <名称>，内置映射改名用 hub hosts set <agentId> --label <名称>。',
+    };
+  }
+  const previous = entry.label;
+  entry.label = label;
+  entry.updatedAt = nowIso();
+  writeHostsRegistry(options, registry);
+  return { ok: true, entry, previous, registry };
 }
 
 /** 0.29.1 U2：不接管名单匹配（agentId 或目录）；返回命中条目或 null。 */
@@ -331,6 +358,7 @@ module.exports = {
   addHost,
   removeHost,
   markHost,
+  renameHost,
   excludedEntryFor,
   excludeHost,
   includeHost,

@@ -117,6 +117,7 @@ function hubScanSkill(hubDir, discovery, opts, skillDir, context) {
     counts: reviewed.counts,
     block: verdict.block,
     policy: reviewed.policy || null,
+    findings: reviewed.findings || null,
   };
 }
 
