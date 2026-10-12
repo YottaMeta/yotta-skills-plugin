@@ -1244,21 +1244,7 @@
     if (b) copyText(b.dataset.copyCmd);
   });
 
-  /* 高级 CLI：/api/help 单一真源（与 CLI --help 同源） */
-  function findHelpEntry(groups, ref) {
-    var seg = String(ref).split(' ');
-    for (var i = 0; i < groups.length; i++) {
-      var cmds = groups[i].commands || [];
-      for (var j = 0; j < cmds.length; j++) {
-        var c = cmds[j];
-        if (c.name !== seg[0]) continue;
-        if (seg.length === 1) return c;
-        var subs = c.subcommands || [];
-        for (var k = 0; k < subs.length; k++) if (subs[k].name === seg[1]) return subs[k];
-      }
-    }
-    return null;
-  }
+  /* 高级 CLI：/api/help 单一真源（与 CLI --help 同源；速查解析由服务端按最深前缀完成） */
   function renderCliHelp(d) {
     if (!d || d.error) { $('#cliMeta').textContent = '帮助加载失败'; return; }
     var total = 0, optTotal = (d.options || []).length;
@@ -1272,7 +1258,7 @@
     $('#cliMeta').textContent = 'v' + (d.version || '-') + ' · 命令 ' + total + ' · 选项 ' + optTotal;
     $('#cliQuick').innerHTML = (d.quick || []).map(function (g) {
       return '<div class="cmd-group"><h3>' + esc(g.group) + '</h3>' + (g.items || []).map(function (item) {
-        var meta = findHelpEntry(d.groups, item.cmd) || {};
+        var meta = item.meta || {};
         return '<div class="cmd"><code>' + esc(item.example) + '</code><span class="why">' + esc(meta.what || '') +
           (item.note ? ' · ' + esc(item.note) : '') + '</span>' +
           (item.danger ? '<span class="badge danger">危险</span>' : '') +

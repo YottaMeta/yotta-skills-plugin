@@ -1092,7 +1092,8 @@ function handleGet(ctx, pathname, url, res) {
     return json(res, 200, {
       version: ctx.version || '',
       groups: cliHelpLib.CLI_HELP_MODEL,
-      quick: cliHelpLib.CLI_HELP_QUICK,
+      // UX-10：速查解析在服务端完成（单一真源），面板直接用 item.meta。
+      quick: cliHelpLib.quickWithMeta(),
       options: cliHelpLib.CLI_GLOBAL_OPTIONS,
     });
   }

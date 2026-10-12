@@ -268,47 +268,47 @@ const CLI_HELP_QUICK = [
   {
     group: '安装与更新',
     items: [
-      { cmd: 'install', example: 'yotta-skills install --agent codex' },
-      { cmd: 'install', example: 'yotta-skills install yotta-memory --dir <技能目录>' },
-      { cmd: 'update', example: 'yotta-skills update --installed-only --dir <技能目录>' },
-      { cmd: 'update', example: 'yotta-skills update --check' },
-      { cmd: 'update', example: 'yotta-skills update --auto' },
-      { cmd: '--dry-run', example: 'yotta-skills install --dry-run --agent codex' },
-      { cmd: 'install-self', example: 'yotta-skills install-self' },
-      { cmd: 'where', example: 'yotta-skills where' },
+      { cmd: 'install', example: 'yotta-skills install --agent codex', note: '装全家到指定智能体' },
+      { cmd: 'install', example: 'yotta-skills install yotta-memory --dir <技能目录>', note: '只装一个技能到指定目录' },
+      { cmd: 'update', example: 'yotta-skills update --installed-only --dir <技能目录>', note: '接管现有技能（只升不降）' },
+      { cmd: 'update', example: 'yotta-skills update --check', note: '只读检查 npm 更新（不改动）' },
+      { cmd: 'update', example: 'yotta-skills update --auto', note: '检查到家族更新后自动更新' },
+      { cmd: '--dry-run', example: 'yotta-skills install --dry-run --agent codex', note: '预演安装 / 更新清单（不联网不改动）' },
+      { cmd: 'install-self', example: 'yotta-skills install-self', note: '把元阁装成独立 CLI' },
+      { cmd: 'where', example: 'yotta-skills where', note: '查看运行中 / 独立安装 / Hub 位置' },
     ],
   },
   {
     group: '体检与回滚',
     items: [
-      { cmd: 'doctor', example: 'yotta-skills doctor --dir <技能目录>' },
-      { cmd: 'rollback', example: 'yotta-skills rollback --list' },
-      { cmd: 'rollback', example: 'yotta-skills rollback --slug <技能> --dir <技能目录>' },
+      { cmd: 'doctor', example: 'yotta-skills doctor --dir <技能目录>', note: '只读自检技能目录与注册表' },
+      { cmd: 'rollback', example: 'yotta-skills rollback --list', note: '列出可回滚的备份点' },
+      { cmd: 'rollback', example: 'yotta-skills rollback --slug <技能> --dir <技能目录>', note: '回滚指定技能到上一个备份' },
     ],
   },
   {
     group: '盘点与路由',
     items: [
-      { cmd: '--list', example: 'yotta-skills --list' },
-      { cmd: '--inventory', example: 'yotta-skills --inventory --json' },
-      { cmd: '--reindex', example: 'yotta-skills --reindex' },
-      { cmd: '--route', example: 'yotta-skills --route "帮我做发布前质量检查"' },
-      { cmd: 'decide-memory', example: 'yotta-skills decide-memory --dry-run' },
+      { cmd: '--list', example: 'yotta-skills --list', note: '列出全家技能与版本' },
+      { cmd: '--inventory', example: 'yotta-skills --inventory --json', note: '盘点本机已装技能' },
+      { cmd: '--reindex', example: 'yotta-skills --reindex', note: '重扫本地技能注册表' },
+      { cmd: '--route', example: 'yotta-skills --route "帮我做发布前质量检查"', note: '按需求给技能组合建议（不自动安装）' },
+      { cmd: 'decide-memory', example: 'yotta-skills decide-memory --dry-run', note: 'M1 记忆裁决只读建议' },
     ],
   },
   {
     group: '技能 Hub',
     items: [
-      { cmd: 'hub', example: 'yotta-skills hub' },
-      { cmd: 'hub hosts', example: 'yotta-skills hub hosts' },
-      { cmd: 'hub hosts', example: 'yotta-skills hub hosts --state orphan' },
-      { cmd: 'hub hosts add', example: 'yotta-skills hub hosts add <技能目录>' },
+      { cmd: 'hub', example: 'yotta-skills hub', note: 'Hub 子命令总览' },
+      { cmd: 'hub hosts', example: 'yotta-skills hub hosts', note: '查看全部宿主与技能目录状态' },
+      { cmd: 'hub hosts', example: 'yotta-skills hub hosts --state orphan', note: '只筛选「残留」状态的宿主' },
+      { cmd: 'hub hosts add', example: 'yotta-skills hub hosts add <技能目录>', note: '注册自定义宿主目录（不创建目录）' },
       { cmd: 'hub hosts rename', example: 'yotta-skills hub hosts rename <技能目录> --label <新名称>', note: '只改显示名；目录与手动状态保持' },
-      { cmd: 'hub hosts list', example: 'yotta-skills hub hosts list' },
-      { cmd: 'hub hosts mark', example: 'yotta-skills hub hosts mark <技能目录> --state orphan' },
-      { cmd: 'hub hosts exclude', example: 'yotta-skills hub hosts exclude <agentId|目录>' },
-      { cmd: 'hub hosts include', example: 'yotta-skills hub hosts include <agentId|目录>' },
-      { cmd: 'hub hosts set', example: 'yotta-skills hub hosts set <agentId> --dir <目录>' },
+      { cmd: 'hub hosts list', example: 'yotta-skills hub hosts list', note: '查看手动注册的自定义宿主' },
+      { cmd: 'hub hosts mark', example: 'yotta-skills hub hosts mark <技能目录> --state orphan', note: '手动标记状态（可用 / 残留 / 隐藏标记）' },
+      { cmd: 'hub hosts exclude', example: 'yotta-skills hub hosts exclude <agentId|目录>', note: '加入「不接管」名单' },
+      { cmd: 'hub hosts include', example: 'yotta-skills hub hosts include <agentId|目录>', note: '恢复接管' },
+      { cmd: 'hub hosts set', example: 'yotta-skills hub hosts set <agentId> --dir <目录>', note: '覆盖某智能体的技能目录映射' },
       { cmd: 'hub config get', example: 'yotta-skills hub config get', note: '查看生效位置与来源' },
       { cmd: 'hub config set', example: 'yotta-skills hub config set --hub <Hub目录>', note: '持久化 Hub 位置；迁移旧 Hub 加 --move' },
       { cmd: 'hub config rollback', example: 'yotta-skills hub config rollback --yes', note: '回滚到上次迁移前的位置（位置回退，用当前内容）', danger: true },
@@ -316,50 +316,104 @@ const CLI_HELP_QUICK = [
       { cmd: 'hub cleanup-backups', example: 'yotta-skills hub cleanup-backups --yes', note: '历史备份 / 暂存残留移入回收站（7 天可恢复）', danger: true },
       { cmd: 'hub hosts remove', example: 'yotta-skills hub hosts remove <技能目录>', note: '只移除注册，不删目录；该目录已有链接不清理（用 hub unlink --dir）' },
       { cmd: 'hub hosts remove', example: 'yotta-skills hub hosts remove <技能目录> --purge', danger: true, note: '清理残留目录：先预览，--yes 才执行；目录入回收站保留 7 天' },
-      { cmd: 'hub install', example: 'yotta-skills hub install' },
-      { cmd: 'hub update', example: 'yotta-skills hub update' },
-      { cmd: 'hub adopt', example: 'yotta-skills hub adopt --scan' },
-      { cmd: 'hub adopt', example: 'yotta-skills hub adopt --apply --include <技能>' },
-      { cmd: 'hub refresh', example: 'yotta-skills hub refresh <技能> --from <技能目录>' },
-      { cmd: 'hub link', example: 'yotta-skills hub link --all' },
+      { cmd: 'hub install', example: 'yotta-skills hub install', note: '把元技能装进 Hub 真源' },
+      { cmd: 'hub update', example: 'yotta-skills hub update', note: '更新 Hub 内元技能（只升不降）' },
+      { cmd: 'hub adopt', example: 'yotta-skills hub adopt --scan', note: '只读预演收编候选与冲突' },
+      { cmd: 'hub adopt', example: 'yotta-skills hub adopt --apply --include <技能>', note: '执行收编（逐项元信扫描，high / critical 阻断）' },
+      { cmd: 'hub refresh', example: 'yotta-skills hub refresh <技能> --from <技能目录>', note: '手动同步非元阁技能（需 --from）' },
+      { cmd: 'hub link', example: 'yotta-skills hub link --all', note: '全量分发到全部已核实宿主' },
       { cmd: 'hub link', example: 'yotta-skills hub link <技能> --agent codex', note: '针对指定智能体分发' },
       { cmd: 'hub unlink', example: 'yotta-skills hub unlink <技能> --agent codex', note: '只解除该智能体的链接，Hub 真源保留' },
       { cmd: 'hub unlink', example: 'yotta-skills hub unlink --dir <技能目录>', note: '清理该目录全部指向当前 Hub 的链接（文件系统为真源；其它位置链接不动）' },
-      { cmd: 'hub unlink', example: 'yotta-skills hub unlink --all' },
+      { cmd: 'hub unlink', example: 'yotta-skills hub unlink --all', note: '解除全部已核实宿主的链接' },
       { cmd: 'hub remove', example: 'yotta-skills hub remove <技能> --dry-run', danger: true, note: '删除 Hub 技能：全宿主清链接（含死链）+ 目录入回收站（7 天）+ 清台账；先 --dry-run 看影响' },
-      { cmd: 'hub status', example: 'yotta-skills hub status' },
-      { cmd: 'hub doctor', example: 'yotta-skills hub doctor' },
+      { cmd: 'hub status', example: 'yotta-skills hub status', note: '查看 Hub 技能 / 版本 / 链接 / 宿主' },
+      { cmd: 'hub doctor', example: 'yotta-skills hub doctor', note: '检查断链 / 缺失 / slug 不一致' },
     ],
   },
   {
     group: '使用记录与 Hook',
     items: [
-      { cmd: 'usage', example: 'yotta-skills usage status' },
-      { cmd: 'usage status', example: 'yotta-skills usage status --json' },
-      { cmd: 'usage enable', example: 'yotta-skills usage enable' },
-      { cmd: 'usage disable', example: 'yotta-skills usage disable' },
-      { cmd: 'usage mark', example: 'yotta-skills usage mark --skill yotta-memory --signal used' },
+      { cmd: 'usage', example: 'yotta-skills usage status', note: '使用记录开关与计数总览' },
+      { cmd: 'usage status', example: 'yotta-skills usage status --json', note: '查看开关与计数（JSON）' },
+      { cmd: 'usage enable', example: 'yotta-skills usage enable', note: '开启本地使用记录' },
+      { cmd: 'usage disable', example: 'yotta-skills usage disable', note: '关闭本地使用记录' },
+      { cmd: 'usage mark', example: 'yotta-skills usage mark --skill yotta-memory --signal used', note: '记录一次使用信号' },
       { cmd: 'usage reset', example: 'yotta-skills usage reset --yes', danger: true, note: '清空本地使用记录，先确认不再需要计数' },
-      { cmd: 'hook', example: 'yotta-skills hook capabilities' },
-      { cmd: 'hook capabilities', example: 'yotta-skills hook capabilities --host codex --json' },
-      { cmd: 'hook evaluate', example: 'yotta-skills hook evaluate --event before_install --manifest <file>' },
-      { cmd: 'hook bind', example: 'yotta-skills hook bind --manifest <file>' },
-      { cmd: 'hook unbind', example: 'yotta-skills hook unbind <binding-id>' },
+      { cmd: 'hook', example: 'yotta-skills hook capabilities', note: 'hook 子命令总览' },
+      { cmd: 'hook capabilities', example: 'yotta-skills hook capabilities --host codex --json', note: '查看宿主六事件能力矩阵' },
+      { cmd: 'hook evaluate', example: 'yotta-skills hook evaluate --event before_install --manifest <file>', note: '评估 hook 声明并留证' },
+      { cmd: 'hook bind', example: 'yotta-skills hook bind --manifest <file>', note: '注册 hook 声明（幂等）' },
+      { cmd: 'hook unbind', example: 'yotta-skills hook unbind <binding-id>', note: '反注册 hook 声明' },
     ],
   },
   {
     group: '面板与帮助',
     items: [
-      { cmd: 'view', example: 'yotta-skills view' },
-      { cmd: 'view', example: 'yotta-skills view --port 8790' },
-      { cmd: '--version', example: 'yotta-skills --version' },
-      { cmd: '--help', example: 'yotta-skills --help' },
+      { cmd: 'view', example: 'yotta-skills view', note: '打开本地控制面板（仅 127.0.0.1）' },
+      { cmd: 'view', example: 'yotta-skills view --port 8790', note: '指定端口打开（默认 8789）' },
+      { cmd: '--version', example: 'yotta-skills --version', note: '查看当前版本' },
+      { cmd: '--help', example: 'yotta-skills --help', note: '查看终端帮助（与面板同一真源）' },
     ],
   },
 ];
+
+/**
+ * UX-10：速查引用解析（单一真源，服务端随 /api/help 下发）。
+ *
+ * 按「最深前缀」把速查条目的 cmd 解析到模型条目：
+ * - 'hub hosts add'  → 'hub hosts add'（不是父级 'hub hosts'）
+ * - 'hub hosts --state orphan' → 'hub hosts'（旗标 / 参数尾段容忍）
+ * - '--list' 等伪命令按全名精确匹配
+ */
+function resolveHelpEntry(groups, ref) {
+  const raw = String(ref || '').trim();
+  if (!raw) return null;
+  const entries = [];
+  for (const group of groups) {
+    for (const cmd of group.commands) {
+      entries.push({ path: cmd.name, entry: cmd });
+      for (const sub of cmd.subcommands || []) {
+        entries.push({ path: cmd.name + ' ' + sub.name, entry: sub });
+      }
+    }
+  }
+  for (const item of entries) {
+    if (item.path === raw) return item.entry;
+  }
+  const tokens = [];
+  for (const token of raw.split(/\s+/)) {
+    if (token.startsWith('-') || token.startsWith('<') || token.startsWith('[')) break;
+    tokens.push(token);
+  }
+  if (!tokens.length) return null;
+  let best = null;
+  let bestLen = -1;
+  for (const item of entries) {
+    const pathTokens = item.path.split(' ');
+    if (pathTokens.length > tokens.length || pathTokens.length <= bestLen) continue;
+    if (pathTokens.every((token, index) => token === tokens[index])) {
+      best = item.entry;
+      bestLen = pathTokens.length;
+    }
+  }
+  return best;
+}
+
+/** 速查数据 + 服务端解析结果（面板直接用 meta，不再自行解析）。 */
+function quickWithMeta() {
+  return CLI_HELP_QUICK.map((group) => ({
+    group: group.group,
+    items: group.items.map((item) => Object.assign({}, item, {
+      meta: resolveHelpEntry(CLI_HELP_MODEL, item.cmd) || {},
+    })),
+  }));
+}
 
 module.exports = {
   CLI_HELP_MODEL,
   CLI_HELP_QUICK,
   CLI_GLOBAL_OPTIONS,
+  resolveHelpEntry,
+  quickWithMeta,
 };
