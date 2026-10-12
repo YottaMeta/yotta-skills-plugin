@@ -40,9 +40,9 @@
       "slug": "yotta-learn",
       "name": "元习",
       "pkg": "@yottameta/yotta-learn",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "domain": "memory",
-      "desc": "学习闭环 + 知识库（CLI / MCP / 本地面板）：经验沉淀为 .learnings/ 条目；知识分类索引 + 关键词查询"
+      "desc": "跨智能体知识库（CLI / MCP / 本地面板）：可复用经验沉淀为分类条目（草稿→核验→查询）；含归位决策树与首次激活引导"
     },
     {
       "slug": "yotta-security-audit",
