@@ -80,9 +80,9 @@
       "slug": "yotta-humanize",
       "name": "元真",
       "pkg": "@yottameta/yotta-humanize",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "domain": "writing",
-      "desc": "去 AI 味中文写作编辑：检测器引擎"
+      "desc": "去 AI 味中文写作编辑：粘贴草稿 → AI 味评分 → 确定性改写（24 类规则）"
     },
     {
       "slug": "yotta-logs",
