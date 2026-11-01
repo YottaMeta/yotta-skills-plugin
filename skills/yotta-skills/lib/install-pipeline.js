@@ -9,6 +9,7 @@ const healthLib = require('./install-health');
 const snapshotLib = require('./install-snapshot');
 const hookAdapterLib = require('./hook-adapter');
 const scanLib = require('./skills-scan');
+const linkSafety = require('./link-safety');
 
 function nowTag() {
   return new Date().toISOString().replace(/[:.]/g, '-');
@@ -125,7 +126,16 @@ function createInstaller(deps) {
 
   return function installOne(skill, dest, opts) {
     const target = path.join(dest, skill.slug);
-    const existingVersion = deps.readInstalledVersion(target);
+    let resolvedTarget;
+    try {
+      resolvedTarget = linkSafety.resolveInstallTarget(target, skill.slug);
+    } catch (error) {
+      safeRecord({ event: 'install', skill: skill.slug, decision: 'block', error: error.message });
+      return { skill, status: 'fail', version: null, note: error.message, exitCode: 4 };
+    }
+    const installTarget = resolvedTarget.target;
+    const workDir = path.dirname(installTarget);
+    const existingVersion = deps.readInstalledVersion(installTarget);
     // 0.29.1 U1「只升不降」：pin 模式目标即最终版本，入口即可判定；
     // range / latest 模式（目标非最终版本）在 npm pack 解析出精确版本后复判（见下方）。
     const relation = scanLib.versionRelation(existingVersion, skill.version);
@@ -164,7 +174,7 @@ function createInstaller(deps) {
     let stagingRoot = null;
     let snapshot = null;
     let backup = null;
-    const hadTarget = fs.existsSync(target);
+    const hadTarget = fs.existsSync(installTarget);
     let manifest = null;
     let extracted = null;
     let lifecycle = { setup: null, builtin_doctor: null, doctor: null, rollback: null };
@@ -307,8 +317,8 @@ function createInstaller(deps) {
         };
       }
 
-      fs.mkdirSync(dest, { recursive: true });
-      stagingRoot = path.join(dest, '.yottaskills-staging');
+      fs.mkdirSync(workDir, { recursive: true });
+      stagingRoot = path.join(workDir, '.yottaskills-staging');
       fs.mkdirSync(stagingRoot, { recursive: true });
       pruneStaleStaging(stagingRoot);
       staged = fs.mkdtempSync(path.join(stagingRoot, skill.slug + '-'));
@@ -322,26 +332,26 @@ function createInstaller(deps) {
           runtimePayload = resolvedSkill.runtimePayload;
         } else if (hadTarget) {
           const carriesPayload = resolvedSkill.runtimePayload
-            .some((name) => fs.existsSync(path.join(target, name)));
+            .some((name) => fs.existsSync(path.join(installTarget, name)));
           if (carriesPayload) runtimePayload = resolvedSkill.runtimePayload;
         }
       }
       const copyWithRuntime = (src, dst) => deps.copyDir(src, dst, { keep: runtimePayload });
       copyTree(extracted.pkgDir, staged, copyWithRuntime);
 
-      if (fs.existsSync(target)) {
-        const captured = captureSnapshot(target, {
+      if (fs.existsSync(installTarget)) {
+        const captured = captureSnapshot(installTarget, {
           homeDir,
           slug: skill.slug,
           version: existingVersion || 'unknown',
           copyDir: copyWithRuntime,
         });
         snapshot = captured.path;
-        backup = path.join(dest, '.yottaskills-backup-' + skill.slug + '-' + process.pid);
-        renameWithRetry(target, backup);
+        backup = path.join(workDir, '.yottaskills-backup-' + skill.slug + '-' + process.pid);
+        renameWithRetry(installTarget, backup);
       }
 
-      renameWithRetry(staged, target);
+      renameWithRetry(staged, installTarget);
       staged = null;
 
       function lifecycleSummary(result) {
@@ -358,14 +368,14 @@ function createInstaller(deps) {
         let restoreError = null;
         let rollbackResult = { ok: false, skipped: true, error: null, result: null };
         try {
-          restoreBackup(target, backup, hadTarget);
+          restoreBackup(installTarget, backup, hadTarget);
           backup = null;
         } catch (error) {
           restoreError = error.message;
         }
         try {
           const rollbackPhase = runPhase(extracted.pkgDir, manifest, 'rollback', {
-            skillDir: target,
+            skillDir: installTarget,
             packageDir: extracted.pkgDir,
             dest,
             snapshot,
@@ -401,7 +411,7 @@ function createInstaller(deps) {
       }
 
       lifecycle.setup = runPhase(extracted.pkgDir, manifest, 'setup', {
-        skillDir: target,
+        skillDir: installTarget,
         packageDir: extracted.pkgDir,
         dest,
         snapshot,
@@ -412,7 +422,7 @@ function createInstaller(deps) {
 
       lifecycle.builtin_doctor = checkInstalledSkill({
         slug: skill.slug,
-        target,
+        target: installTarget,
         expectedVersion: packed.resolved || skill.version,
         expectedPackage: skill.pkg,
       });
@@ -424,7 +434,7 @@ function createInstaller(deps) {
       }
 
       lifecycle.doctor = runPhase(extracted.pkgDir, manifest, 'doctor', {
-        skillDir: target,
+        skillDir: installTarget,
         packageDir: extracted.pkgDir,
         dest,
         snapshot,
@@ -491,7 +501,7 @@ function createInstaller(deps) {
         exitCode: 0,
       };
     } catch (error) {
-      restoreBackup(target, backup, hadTarget);
+      restoreBackup(installTarget, backup, hadTarget);
       backup = null;
       safeRecord({ event: 'install', skill: skill.slug, decision: 'fail', error: error.message });
       return { skill, status: 'fail', version: null, note: error.message, exitCode: 1 };

@@ -11,6 +11,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const linkSafety = require('./link-safety');
 
 const COPY_SKIP = new Set(['package.json', 'bin', 'node_modules', '.git']);
 
@@ -27,9 +28,18 @@ function copyDir(src, dst, skip, topLevel) {
     const s = path.join(src, entry.name);
     const d = path.join(dst, entry.name);
     if (entry.isDirectory()) {
+      if (linkSafety.isDirectLink(d)) {
+        throw new linkSafety.TargetError('目标目录包含符号链接或 junction，拒绝写入: ' + d);
+      }
       fs.mkdirSync(d, { recursive: true });
+      if (linkSafety.isDirectLink(d)) {
+        throw new linkSafety.TargetError('目标目录包含符号链接或 junction，拒绝写入: ' + d);
+      }
       copyDir(s, d, skip, false);
     } else if (entry.isFile()) {
+      if (linkSafety.isDirectLink(d)) {
+        throw new linkSafety.TargetError('目标文件是符号链接，拒绝写入: ' + d);
+      }
       fs.copyFileSync(s, d);
     }
   }
