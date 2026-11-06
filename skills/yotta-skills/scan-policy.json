@@ -7,10 +7,10 @@
   ],
   "skills": {
     "yotta-anti-shallow": {
-      "version": "1.4.3",
-      "treeHash": "sha256:39ad4108f27c689be23163773a90b61e9116d400df606852e51024de019c6bc8",
-      "files": 7,
-      "bytes": 220568,
+      "version": "1.4.4",
+      "treeHash": "sha256:259c5d63a97bfc2ac24bca1b15e78056d3f921dbf7f62b7f779683c78c5d68be",
+      "files": 8,
+      "bytes": 223460,
       "mode": "strict",
       "exceptions": [
         {
@@ -28,10 +28,10 @@
       ]
     },
     "yotta-chain": {
-      "version": "0.1.6",
-      "treeHash": "sha256:4c911d96aa11418b50f702b49207fd79b719c8a0261920b2d03f801446ec3ce0",
+      "version": "0.1.7",
+      "treeHash": "sha256:ecc0bbe664f6032239bb2400d3590f79e4ff308a48aa6797fd6e7f36c13d334c",
       "files": 9,
-      "bytes": 274773,
+      "bytes": 275586,
       "mode": "strict",
       "exceptions": [
         {
@@ -59,10 +59,10 @@
       ]
     },
     "yotta-guardian": {
-      "version": "0.1.9",
-      "treeHash": "sha256:669bbdc3b939c8b11a7d597f44ab1cab932bcdf158429198e213e106f0d9c280",
+      "version": "0.1.10",
+      "treeHash": "sha256:a3a65ecc44e5a21160d8a7fe0e3ecb8e94eda8b30d97c2117bb4e999fa77c659",
       "files": 13,
-      "bytes": 267661,
+      "bytes": 268084,
       "mode": "detection",
       "exceptions": [
         {
@@ -104,10 +104,10 @@
       ]
     },
     "yotta-logwatch": {
-      "version": "0.3.2",
-      "treeHash": "sha256:78e6042421175786cc3eb2f8b19747c01f137557eea8b0b207c9abff74d23deb",
+      "version": "0.3.3",
+      "treeHash": "sha256:ba9351d02a7429c57e600cb1db593434a912267f15bca29874f25391b3034119",
       "files": 13,
-      "bytes": 267854,
+      "bytes": 268251,
       "mode": "detection",
       "exceptions": [
         {
@@ -193,14 +193,26 @@
           "category": "credential-harvest",
           "detection": true,
           "reason": "detection-rule"
+        },
+        {
+          "scanners": [
+            "yotta-verify",
+            "yotta-agent-hardening"
+          ],
+          "rule": "DEX-007",
+          "path": "scripts/test_yotta_logwatch.py",
+          "action": "allow",
+          "category": "remote-download",
+          "detection": false,
+          "reason": "logwatch-test-fixture"
         }
       ]
     },
     "yotta-memory": {
-      "version": "0.23.2",
-      "treeHash": "sha256:e65b50c60e9c013f057f2a4d2fb6f9bcf9f2c85c7f3e70aa5061269632202d05",
+      "version": "0.23.3",
+      "treeHash": "sha256:6b87c902fa5e5b6f5d5e306a36d5d7b31f0c74b0d68d68a81abb3862212c1f30",
       "files": 18,
-      "bytes": 1369771,
+      "bytes": 1370169,
       "mode": "strict",
       "exceptions": [
         {
@@ -309,14 +321,86 @@
           "category": "data-exfiltration",
           "detection": false,
           "reason": "config-dir-read-and-local-http-server-are-separated"
+        },
+        {
+          "scanners": [
+            "yotta-verify",
+            "yotta-agent-hardening"
+          ],
+          "rule": "DEX-001",
+          "path": "test/memory-scan.test.js",
+          "action": "allow",
+          "category": "remote-download",
+          "detection": false,
+          "reason": "memory-scan-test-fixture"
+        },
+        {
+          "scanners": [
+            "yotta-verify",
+            "yotta-agent-hardening"
+          ],
+          "rule": "PIJ-001",
+          "path": "test/memory-scan.test.js",
+          "action": "allow",
+          "category": "prompt-injection",
+          "detection": false,
+          "reason": "memory-scan-test-fixture"
+        },
+        {
+          "scanners": [
+            "yotta-verify",
+            "yotta-agent-hardening"
+          ],
+          "rule": "PIJ-002",
+          "path": "test/memory-scan.test.js",
+          "action": "allow",
+          "category": "prompt-injection",
+          "detection": false,
+          "reason": "memory-scan-test-fixture"
+        },
+        {
+          "scanners": [
+            "yotta-verify",
+            "yotta-agent-hardening"
+          ],
+          "rule": "PIJ-012",
+          "path": "test/memory-scan.test.js",
+          "action": "allow",
+          "category": "prompt-injection",
+          "detection": false,
+          "reason": "memory-scan-test-fixture"
+        },
+        {
+          "scanners": [
+            "yotta-verify",
+            "yotta-agent-hardening"
+          ],
+          "rule": "PIJ-022",
+          "path": "test/memory-scan.test.js",
+          "action": "allow",
+          "category": "prompt-injection",
+          "detection": false,
+          "reason": "memory-scan-test-fixture"
+        },
+        {
+          "scanners": [
+            "yotta-verify",
+            "yotta-agent-hardening"
+          ],
+          "rule": "PRI-001",
+          "path": "test/memory-scan.test.js",
+          "action": "allow",
+          "category": "privilege-escalation",
+          "detection": false,
+          "reason": "memory-scan-test-fixture"
         }
       ]
     },
     "yotta-recon": {
-      "version": "0.1.9",
-      "treeHash": "sha256:b0aadc31a0559ca321717850094b8b3e86fbdfbda3e9bc152029ba193e995648",
+      "version": "0.1.10",
+      "treeHash": "sha256:85252b09f0746b0170682b48cb09819489e00e50c32a2a0c7cfdab714bf09797",
       "files": 11,
-      "bytes": 276066,
+      "bytes": 276466,
       "mode": "detection",
       "exceptions": [
         {
@@ -346,10 +430,10 @@
       ]
     },
     "yotta-security-audit": {
-      "version": "0.3.2",
-      "treeHash": "sha256:d1e88f0377bede22f9d3a343e54383c97ae9027f53c032322751a5143fbb4d42",
+      "version": "0.3.3",
+      "treeHash": "sha256:de930dfe97fae6a4be337463d0e4971a51790e2d0989e4ccaebf0eb070575568",
       "files": 15,
-      "bytes": 356343,
+      "bytes": 356803,
       "mode": "detection",
       "exceptions": [
         {
@@ -399,10 +483,10 @@
       ]
     },
     "yotta-triage": {
-      "version": "0.1.5",
-      "treeHash": "sha256:0e0c2d6f85a2d986bd39a4a58d8148d91cec3f20390d45ffd6a05a89f73bb775",
+      "version": "0.1.6",
+      "treeHash": "sha256:ff6445525b6ba316f8acc325f2e7d3dab7057b7cf006d7fcd5adb060ec357d10",
       "files": 10,
-      "bytes": 234326,
+      "bytes": 234723,
       "mode": "detection",
       "exceptions": [
         {
@@ -464,14 +548,26 @@
           "category": "network-call",
           "detection": true,
           "reason": "detection-rule"
+        },
+        {
+          "scanners": [
+            "yotta-verify",
+            "yotta-agent-hardening"
+          ],
+          "rule": "DEX-007",
+          "path": "scripts/test_yotta_triage.py",
+          "action": "allow",
+          "category": "remote-download",
+          "detection": false,
+          "reason": "triage-test-fixture"
         }
       ]
     },
     "yotta-vetter": {
-      "version": "0.2.8",
-      "treeHash": "sha256:5f19c94cf34c413811929be365e55517ea1614957a9c4e0d0ed747e080d9d777",
+      "version": "0.2.9",
+      "treeHash": "sha256:82aa9e3f8951ed64102c7893fcabc972901df0ff316d3609eb3aa87fc18d6d26",
       "files": 11,
-      "bytes": 222655,
+      "bytes": 223361,
       "mode": "strict",
       "exceptions": [
         {
