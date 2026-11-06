@@ -15,6 +15,7 @@ const DEFAULT_TIMEOUT_MS = 600;
 const MAX_TIMEOUT_MS = 5000;
 const MIN_TIMEOUT_MS = 50;
 const MAX_STDOUT_BYTES = 256 * 1024;
+const SPAWN_MAX_BUFFER_BYTES = MAX_STDOUT_BYTES * 4;
 const KNOWN_CAPABILITIES = ['o1.route', 'm1.adjudicate', 'memory.hook', 'context.paging'];
 
 function providerHome() {
@@ -127,7 +128,7 @@ function invokeProvider(provider, capability, payload) {
       input: JSON.stringify(request),
       encoding: 'utf8',
       timeout: provider.timeout_ms,
-      maxBuffer: MAX_STDOUT_BYTES,
+      maxBuffer: SPAWN_MAX_BUFFER_BYTES,
       shell: false,
       cwd: providerHome(),
       env: minimalEnv(),
