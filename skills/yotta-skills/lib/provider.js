@@ -165,6 +165,14 @@ function invokeProvider(provider, capability, payload) {
       note: 'provider 退出码非 0：' + proc.status,
     };
   }
+  if (Buffer.byteLength(String(proc.stdout || ''), 'utf8') >= MAX_STDOUT_BYTES) {
+    return {
+      status: 'error',
+      provider_id: provider.id,
+      duration_ms: duration,
+      note: 'provider 输出超过 ' + MAX_STDOUT_BYTES + ' 字节',
+    };
+  }
   let response;
   try {
     response = JSON.parse(String(proc.stdout || '').trim() || '{}');
